@@ -350,13 +350,44 @@ function draw(){
   gl.drawArrays(gl.TRIANGLES,0,3);
 }
 
-/* ---------- auto-morph through the parameter band ---------- */
-let mt=0;
-function morphStep(dt){
-  mt += dt*P.mspeed;
-  P.feed = 0.039 + 0.020*Math.sin(mt*0.20) + 0.006*Math.sin(mt*0.083+1.7);
-  P.kill = 0.0590 + 0.0085*Math.sin(mt*0.155+0.6) + 0.0020*Math.sin(mt*0.31);
+/* ---------- auto-morph: a closed loop through known-alive (F,k) waypoints ---------- */
+/* Gray-Scott only lives in a narrow curved band; interpolating between viable
+   waypoints keeps the trajectory inside it so the pattern never drifts into the
+   empty/extinction zone. */
+const MORPH_PATH = [
+  {feed:0.0545, kill:0.0620},  // coral
+  {feed:0.0500, kill:0.0605},
+  {feed:0.0420, kill:0.0590},  // holes
+  {feed:0.0340, kill:0.0575},
+  {feed:0.0290, kill:0.0560},  // maze
+  {feed:0.0260, kill:0.0545},  // zebra
+  {feed:0.0300, kill:0.0540},
+  {feed:0.0370, kill:0.0585},  // mitosis (kept off the high-kill death edge)
+  {feed:0.0460, kill:0.0605},
+  {feed:0.0540, kill:0.0615},
+];
+let mphase=0;
+function morphStep(dtSec){
+  mphase += dtSec * P.mspeed * 0.25;     // ~8s per segment at morph speed 0.5
+  const N=MORPH_PATH.length;
+  const f=((mphase%N)+N)%N, i=Math.floor(f), frac=f-i;
+  const a=MORPH_PATH[i], b=MORPH_PATH[(i+1)%N];
+  const s=frac*frac*(3-2*frac);          // smoothstep ease
+  P.feed = a.feed+(b.feed-a.feed)*s;
+  P.kill = a.kill+(b.kill-a.kill)*s;
   syncInputs();
+}
+
+/* ---------- safety: if the field collapses while morphing, re-seed so it recovers ---------- */
+let readBuf=null, rescueT=0;
+function maybeRescue(dtSec){
+  if(!P.morph){ rescueT=0; return; }
+  rescueT+=dtSec; if(rescueT<2.0) return; rescueT=0;     // check ~every 2s
+  if(!readBuf) readBuf=new Float32Array(SIM_W*SIM_H*4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fboA);
+  gl.readPixels(0,0,SIM_W,SIM_H,gl.RGBA,gl.FLOAT,readBuf);
+  let sum=0; for(let i=1;i<readBuf.length;i+=4) sum+=readBuf[i];
+  if(sum/(SIM_W*SIM_H) < 0.004) seed("spots");           // collapsed -> reseed
 }
 
 /* ---------- main loop ---------- */
@@ -364,8 +395,9 @@ let last=performance.now(), fps=0, frames=0, fpsT=0;
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   if(!P.paused){
-    if(P.morph) morphStep(dt*60);
+    if(P.morph) morphStep(dt);
     step();
+    maybeRescue(dt);
   }
   draw();
   frames++; fpsT+=dt; if(fpsT>=0.5){ fps=Math.round(frames/fpsT); frames=0; fpsT=0; }
