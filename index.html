@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reaction-Diffusion Studio — B&amp;W</title>
+<style>
+  :root{ --bg:#0c0d10; --panel:#16181d; --line:#262a31; --txt:#d7dbe2; --dim:#838b98; --accent:#e7e9ee; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
+  #stage{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas{ background:#fff; box-shadow:0 10px 60px rgba(0,0,0,.6); cursor:crosshair; touch-action:none;
+    max-width:calc(100vw - 320px); max-height:100vh; image-rendering:auto; transition:max-width .25s ease; }
+  body.collapsed canvas{ max-width:100vw; }
+  #panel{ position:fixed; top:0; right:0; width:300px; height:100%; background:var(--panel);
+    border-left:1px solid var(--line); padding:14px 14px 40px; overflow-y:auto; transition:transform .25s ease;
+    scrollbar-width:thin; scrollbar-color:#2c313a transparent; }
+  body.collapsed #panel{ transform:translateX(100%); }
+  #panel::-webkit-scrollbar{ width:7px; }
+  #panel::-webkit-scrollbar-track{ background:transparent; }
+  #panel::-webkit-scrollbar-thumb{ background:#2c313a; border-radius:4px; }
+  #panel::-webkit-scrollbar-thumb:hover{ background:#3a404a; }
+  #toggle{ position:fixed; top:10px; right:312px; z-index:20; transition:right .25s ease; }
+  body.collapsed #toggle{ right:10px; }
+  #panel h1{ font-size:13px; letter-spacing:.06em; text-transform:uppercase; margin:0 0 2px; color:var(--accent); }
+  #panel .sub{ color:var(--dim); font-size:11px; margin-bottom:12px; }
+  .grp{ border-top:1px solid var(--line); padding:11px 0 4px; }
+  .grp h2{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:0 0 8px; }
+  .row{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .row label{ flex:0 0 92px; color:var(--dim); }
+  .row input[type=range]{ flex:1; accent-color:#fff; height:18px; }
+  .row .val{ flex:0 0 50px; text-align:right; font-variant-numeric:tabular-nums; font-size:11px; }
+  .btns{ display:flex; flex-wrap:wrap; gap:6px; }
+  button{ background:#20242b; color:var(--txt); border:1px solid var(--line); border-radius:6px;
+    padding:6px 9px; cursor:pointer; font-size:11.5px; }
+  button:hover{ background:#2a2f38; border-color:#3a404a; }
+  button.on{ background:#e7e9ee; color:#111; border-color:#e7e9ee; }
+  button.rec{ background:#c0392b; color:#fff; border-color:#c0392b; }
+  select{ background:#20242b; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:5px; flex:1; }
+  .hint{ color:var(--dim); font-size:10.5px; margin-top:8px; }
+  kbd{ background:#20242b; border:1px solid var(--line); border-radius:3px; padding:0 4px; font-size:10px; }
+  #status{ position:fixed; left:10px; bottom:8px; color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
+  #err{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:40px;
+    background:#0c0d10; color:#ff7a6b; text-align:center; font-size:14px; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div id="err"></div>
+<button id="toggle" title="Show / hide panel (H)">Hide</button>
+
+<div id="panel">
+  <h1>Reaction-Diffusion Studio</h1>
+  <div class="sub">Gray-Scott · black &amp; white</div>
+  <div class="btns" style="margin-bottom:10px"><button id="reset">Reset to defaults</button></div>
+
+  <div class="grp">
+    <h2>Pattern regime (presets)</h2>
+    <div class="btns" id="presets"></div>
+  </div>
+
+  <div class="grp">
+    <h2>Reaction</h2>
+    <div class="row"><label>Feed (F)</label><input id="feed" type="range" min="0.001" max="0.1" step="0.0005"><span class="val" id="feed_v"></span></div>
+    <div class="row"><label>Kill (k)</label><input id="kill" type="range" min="0.03" max="0.075" step="0.0002"><span class="val" id="kill_v"></span></div>
+    <div class="row"><label>Diffuse A</label><input id="dA" type="range" min="0.2" max="1.4" step="0.01"><span class="val" id="dA_v"></span></div>
+    <div class="row"><label>Diffuse B</label><input id="dB" type="range" min="0.1" max="0.8" step="0.01"><span class="val" id="dB_v"></span></div>
+    <div class="row"><label>Time step</label><input id="dt" type="range" min="0.4" max="1.4" step="0.02"><span class="val" id="dt_v"></span></div>
+    <div class="row"><label>Speed</label><input id="iters" type="range" min="1" max="40" step="1"><span class="val" id="iters_v"></span></div>
+  </div>
+
+  <div class="grp">
+    <h2>Look (black &amp; white)</h2>
+    <div class="row"><label>Render</label>
+      <select id="mode">
+        <option value="0">Filled (solid blobs)</option>
+        <option value="2">Outline (line art)</option>
+        <option value="1">Soft (anti-aliased)</option>
+      </select>
+    </div>
+    <div class="row"><label>Threshold</label><input id="thresh" type="range" min="0.05" max="0.6" step="0.005"><span class="val" id="thresh_v"></span></div>
+    <div class="row"><label>Edge / width</label><input id="width" type="range" min="0.005" max="0.18" step="0.002"><span class="val" id="width_v"></span></div>
+    <div class="btns">
+      <button id="invert">Invert B/W</button>
+    </div>
+  </div>
+
+  <div class="grp">
+    <h2>Motion</h2>
+    <div class="btns">
+      <button id="morph">Auto-morph</button>
+    </div>
+    <div class="row"><label>Morph speed</label><input id="mspeed" type="range" min="0.05" max="2" step="0.05"><span class="val" id="mspeed_v"></span></div>
+    <div class="hint">Auto-morph slowly drifts F &amp; k through the interesting band, reproducing the journey in the source video.</div>
+  </div>
+
+  <div class="grp">
+    <h2>Seed / canvas</h2>
+    <div class="btns">
+      <button id="seedSpots">Spots</button>
+      <button id="seedCentre">Centre</button>
+      <button id="seedRandom">Random</button>
+      <button id="seedRings">Rings</button>
+      <button id="clear">Clear</button>
+    </div>
+    <div class="row" style="margin-top:8px"><label>Brush size</label><input id="brush" type="range" min="2" max="80" step="1"><span class="val" id="brush_v"></span></div>
+    <div class="hint">Drag on the canvas to draw/seed.</div>
+  </div>
+
+  <div class="grp">
+    <h2>Record video</h2>
+    <div class="btns">
+      <button id="record" class="rec">● Record</button>
+      <button id="snap">Save PNG</button>
+      <button id="pause">Pause</button>
+    </div>
+    <div class="hint">Records the canvas to <code>recording.webm</code> at 60fps. Run <kbd>./assemble.sh</kbd> to turn it into a <code>.mov</code> matching the source (1260×1746).</div>
+  </div>
+
+  <div class="grp">
+    <div class="hint">
+      <kbd>Space</kbd> pause · <kbd>M</kbd> morph · <kbd>R</kbd> record · <kbd>C</kbd> clear · <kbd>I</kbd> invert · <kbd>H</kbd> hide panel · <kbd>1–8</kbd> presets · drag to draw
+    </div>
+  </div>
+</div>
+
+<div id="status"></div>
+
+<script type="text/javascript">
+"use strict";
+/* ---------- config ---------- */
+const OUT_W = 1260, OUT_H = 1746;                 // display/export resolution (matches source)
+const ASPECT = OUT_W / OUT_H;
+let SIM_W = 600, SIM_H = Math.round(SIM_W / ASPECT);   // simulation grid
+
+/* ---------- presets (Pearson / Munafo classification of Gray-Scott regimes) ---------- */
+const PRESETS = [
+  { name:"Coral",      feed:0.0545, kill:0.0620 },
+  { name:"Maze",       feed:0.0290, kill:0.0570 },
+  { name:"Mitosis",    feed:0.0367, kill:0.0649 },
+  { name:"Worms",      feed:0.0580, kill:0.0650 },
+  { name:"Spirals",    feed:0.0180, kill:0.0510 },
+  { name:"Zebra",      feed:0.0260, kill:0.0510 },
+  { name:"Holes",      feed:0.0390, kill:0.0580 },
+  { name:"Solitons",   feed:0.0250, kill:0.0600 },
+];
+
+/* ---------- state ---------- */
+const P = {
+  feed:0.0545, kill:0.0620, dA:1.0, dB:0.5, dt:1.0, iters:14,
+  mode:0, thresh:0.20, width:0.04, invert:0,
+  morph:false, mspeed:0.5, brush:24,
+  paused:false,
+};
+const DEFAULTS = Object.freeze({ ...P });
+
+const canvas = document.getElementById("c");
+canvas.width = OUT_W; canvas.height = OUT_H;
+const gl = canvas.getContext("webgl2", { antialias:false, preserveDrawingBuffer:true });
+
+function fatal(msg){ const e=document.getElementById("err"); e.style.display="flex"; e.textContent=msg; throw new Error(msg); }
+if(!gl) fatal("WebGL2 is not available in this browser.");
+if(!gl.getExtension("EXT_color_buffer_float")) fatal("EXT_color_buffer_float not supported — needed for the float simulation buffers.");
+
+/* ---------- shaders ---------- */
+const VS = `#version 300 es
+in vec2 p; out vec2 v_uv;
+void main(){ v_uv = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }`;
+
+const SIM_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform vec2 u_texel;
+uniform float u_dA,u_dB,u_feed,u_kill,u_dt;
+uniform vec2 u_brush; uniform float u_brushR,u_brushAmt;
+in vec2 v_uv; out vec4 o;
+vec2 s(vec2 uv){ return texture(u_state, uv).rg; }
+void main(){
+  vec2 uv=v_uv; vec2 c=s(uv);
+  vec2 lap = c*-1.0
+    + (s(uv+vec2( u_texel.x,0.))+s(uv+vec2(-u_texel.x,0.))
+      +s(uv+vec2(0., u_texel.y))+s(uv+vec2(0.,-u_texel.y)))*0.2
+    + (s(uv+vec2( u_texel.x, u_texel.y))+s(uv+vec2(-u_texel.x, u_texel.y))
+      +s(uv+vec2( u_texel.x,-u_texel.y))+s(uv+vec2(-u_texel.x,-u_texel.y)))*0.05;
+  float A=c.r,B=c.g; float rab=A*B*B;
+  A += (u_dA*lap.r - rab + u_feed*(1.0-A))*u_dt;
+  B += (u_dB*lap.g + rab - (u_kill+u_feed)*B)*u_dt;
+  if(u_brush.x>=0.0 && distance(uv,u_brush) < u_brushR){ B += u_brushAmt; A -= u_brushAmt*0.5; }
+  o = vec4(clamp(A,0.,1.), clamp(B,0.,1.), 0., 1.);
+}`;
+
+const RENDER_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_state; uniform vec2 u_size;
+uniform int u_mode; uniform float u_thresh,u_width,u_invert;
+in vec2 v_uv; out vec4 o;
+float sampB(vec2 uv){
+  // manual bilinear so it stays smooth without float-linear filtering
+  vec2 p = uv*u_size - 0.5; vec2 i = floor(p); vec2 f = p - i;
+  vec2 t = (i+0.5)/u_size; vec2 dx=vec2(1.,0.)/u_size, dy=vec2(0.,1.)/u_size;
+  float a=texture(u_state,t).g, b=texture(u_state,t+dx).g;
+  float cc=texture(u_state,t+dy).g, d=texture(u_state,t+dx+dy).g;
+  return mix(mix(a,b,f.x), mix(cc,d,f.x), f.y);
+}
+void main(){
+  float B = sampB(v_uv);
+  float ink;
+  if(u_mode==0){ ink = step(u_thresh, B); }
+  else if(u_mode==1){ ink = smoothstep(u_thresh-u_width, u_thresh+u_width, B); }
+  else { float dd = abs(B-u_thresh); ink = 1.0 - smoothstep(u_width*0.5, u_width, dd); }
+  ink = mix(ink, 1.0-ink, u_invert);
+  o = vec4(vec3(1.0-ink), 1.0);  // ink=1 -> black on white
+}`;
+
+function sh(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fatal("Shader error:\n"+gl.getShaderInfoLog(s)); return s; }
+function prog(vs,fs){ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs)); gl.bindAttribLocation(p,0,"p"); gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fatal("Link error:\n"+gl.getProgramInfoLog(p)); return p; }
+
+const simProg = prog(VS, SIM_FS);
+const renderProg = prog(VS, RENDER_FS);
+
+/* fullscreen triangle */
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+/* ping-pong float textures */
+let texA, texB, fboA, fboB;
+function makeTex(){
+  const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,SIM_W,SIM_H,0,gl.RGBA,gl.FLOAT,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  return t;
+}
+function makeFbo(t){ const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0); return f; }
+
+function allocSim(){
+  texA=makeTex(); texB=makeTex(); fboA=makeFbo(texA); fboB=makeFbo(texB);
+}
+allocSim();
+
+/* ---------- seeding ---------- */
+function uploadState(data){ gl.bindTexture(gl.TEXTURE_2D,texA);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,SIM_W,SIM_H,0,gl.RGBA,gl.FLOAT,data); }
+
+function blankField(){ const d=new Float32Array(SIM_W*SIM_H*4);
+  for(let i=0;i<SIM_W*SIM_H;i++){ d[i*4]=1; d[i*4+1]=0; d[i*4+3]=1; } return d; }
+
+function seed(kind){
+  const d=blankField();
+  const put=(x,y,r)=>{ for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++){
+    if(i*i+j*j>r*r) continue; const xx=((x+i)%SIM_W+SIM_W)%SIM_W, yy=((y+j)%SIM_H+SIM_H)%SIM_H;
+    const idx=(yy*SIM_W+xx)*4; d[idx+1]=1; d[idx]=0; } };
+  if(kind==="centre"){ put(SIM_W>>1,SIM_H>>1, Math.round(SIM_W*0.06)); }
+  else if(kind==="spots"){ const n=22; for(let s=0;s<n;s++) put((Math.random()*SIM_W)|0,(Math.random()*SIM_H)|0, 4+(Math.random()*8|0)); }
+  else if(kind==="random"){ for(let i=0;i<SIM_W*SIM_H;i++){ if(Math.random()<0.06){ d[i*4+1]=1; d[i*4]=0; } } }
+  else if(kind==="rings"){ const cx=SIM_W/2, cy=SIM_H/2;
+    for(let y=0;y<SIM_H;y++)for(let x=0;x<SIM_W;x++){ const dr=Math.hypot(x-cx,y-cy);
+      if(Math.sin(dr*0.18)>0.6){ const idx=(y*SIM_W+x)*4; d[idx+1]=1; d[idx]=0; } } }
+  uploadState(d);
+  // copy seeded texA into texB so ping-pong starts coherent
+  blitClearTo(texB);
+}
+function blitClearTo(t){ // copy texA -> t via framebuffer read (simple re-upload through render? just re-seed both)
+  // easiest: render a copy. We just re-upload same data is unavailable here; instead run one identity copy.
+  gl.bindFramebuffer(gl.FRAMEBUFFER,(t===texB)?fboB:fboA);
+  gl.viewport(0,0,SIM_W,SIM_H);
+  gl.useProgram(renderProgCopy); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,texA);
+  gl.uniform1i(copy_state,0); gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+/* identity copy program (writes raw rg) */
+const COPY_FS = `#version 300 es
+precision highp float; uniform sampler2D u_state; in vec2 v_uv; out vec4 o;
+void main(){ o = texture(u_state, v_uv); }`;
+const renderProgCopy = prog(VS, COPY_FS);
+const copy_state = gl.getUniformLocation(renderProgCopy,"u_state");
+
+/* ---------- uniforms ---------- */
+const U = {
+  state:gl.getUniformLocation(simProg,"u_state"), texel:gl.getUniformLocation(simProg,"u_texel"),
+  dA:gl.getUniformLocation(simProg,"u_dA"), dB:gl.getUniformLocation(simProg,"u_dB"),
+  feed:gl.getUniformLocation(simProg,"u_feed"), kill:gl.getUniformLocation(simProg,"u_kill"),
+  dt:gl.getUniformLocation(simProg,"u_dt"), brush:gl.getUniformLocation(simProg,"u_brush"),
+  brushR:gl.getUniformLocation(simProg,"u_brushR"), brushAmt:gl.getUniformLocation(simProg,"u_brushAmt"),
+};
+const RU = {
+  state:gl.getUniformLocation(renderProg,"u_state"), size:gl.getUniformLocation(renderProg,"u_size"),
+  mode:gl.getUniformLocation(renderProg,"u_mode"), thresh:gl.getUniformLocation(renderProg,"u_thresh"),
+  width:gl.getUniformLocation(renderProg,"u_width"), invert:gl.getUniformLocation(renderProg,"u_invert"),
+};
+
+/* ---------- brush input ---------- */
+let brush={x:-1,y:-1,down:false};
+function evToUv(e){ const r=canvas.getBoundingClientRect();
+  const x=(e.clientX-r.left)/r.width, y=1.0-(e.clientY-r.top)/r.height; return {x,y}; }
+canvas.addEventListener("pointerdown",e=>{ brush.down=true; const u=evToUv(e); brush.x=u.x; brush.y=u.y; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove",e=>{ if(!brush.down)return; const u=evToUv(e); brush.x=u.x; brush.y=u.y; });
+canvas.addEventListener("pointerup",e=>{ brush.down=false; brush.x=-1; });
+
+/* ---------- simulation step ---------- */
+function step(){
+  gl.useProgram(simProg); gl.bindVertexArray(vao);
+  gl.viewport(0,0,SIM_W,SIM_H);
+  gl.uniform2f(U.texel,1/SIM_W,1/SIM_H);
+  gl.uniform1f(U.dA,P.dA); gl.uniform1f(U.dB,P.dB);
+  gl.uniform1f(U.feed,P.feed); gl.uniform1f(U.kill,P.kill); gl.uniform1f(U.dt,P.dt);
+  gl.uniform1f(U.brushR, P.brush/Math.min(SIM_W,SIM_H));
+  gl.uniform1f(U.brushAmt, 0.9);
+  const n=P.iters|0;
+  for(let i=0;i<n;i++){
+    const readT = (i%2===0)?texA:texB;
+    const writeF = (i%2===0)?fboB:fboA;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,writeF);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,readT); gl.uniform1i(U.state,0);
+    // brush only active on first sub-step to avoid over-painting
+    if(brush.down && i===0) gl.uniform2f(U.brush,brush.x,brush.y); else gl.uniform2f(U.brush,-1,-1);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+  // ensure texA holds latest result
+  if(n%2===1){ const t=texA; texA=texB; texB=t; const f=fboA; fboA=fboB; fboB=f; }
+}
+
+function draw(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,OUT_W,OUT_H);
+  gl.useProgram(renderProg); gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,texA); gl.uniform1i(RU.state,0);
+  gl.uniform2f(RU.size,SIM_W,SIM_H);
+  gl.uniform1i(RU.mode,P.mode); gl.uniform1f(RU.thresh,P.thresh);
+  gl.uniform1f(RU.width,P.width); gl.uniform1f(RU.invert,P.invert);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+/* ---------- auto-morph through the parameter band ---------- */
+let mt=0;
+function morphStep(dt){
+  mt += dt*P.mspeed;
+  P.feed = 0.039 + 0.020*Math.sin(mt*0.20) + 0.006*Math.sin(mt*0.083+1.7);
+  P.kill = 0.0590 + 0.0085*Math.sin(mt*0.155+0.6) + 0.0020*Math.sin(mt*0.31);
+  syncInputs();
+}
+
+/* ---------- main loop ---------- */
+let last=performance.now(), fps=0, frames=0, fpsT=0;
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(!P.paused){
+    if(P.morph) morphStep(dt*60);
+    step();
+  }
+  draw();
+  frames++; fpsT+=dt; if(fpsT>=0.5){ fps=Math.round(frames/fpsT); frames=0; fpsT=0; }
+  document.getElementById("status").textContent =
+    `${fps} fps · F ${P.feed.toFixed(4)} · k ${P.kill.toFixed(4)} · grid ${SIM_W}×${SIM_H}` + (P.paused?" · PAUSED":"") + (rec?" · ● REC":"");
+  requestAnimationFrame(loop);
+}
+
+/* ---------- UI wiring ---------- */
+const $=id=>document.getElementById(id);
+const RANGES=[];
+function bindRange(id,key,fmt){ const el=$(id), v=$(id+"_v");
+  const set=()=>{ el.value=P[key]; v.textContent=fmt?fmt(P[key]):P[key]; };
+  const upd=()=>{ P[key]=parseFloat(el.value); v.textContent=fmt?fmt(P[key]):P[key]; };
+  el.addEventListener("input",upd); set();
+  RANGES.push(set); }
+function refreshControls(){ RANGES.forEach(f=>f());
+  $("mode").value=String(P.mode);
+  $("invert").classList.toggle("on",!!P.invert);
+  $("morph").classList.toggle("on",P.morph); }
+function syncInputs(){ $("feed").value=P.feed; $("feed_v").textContent=P.feed.toFixed(4);
+  $("kill").value=P.kill; $("kill_v").textContent=P.kill.toFixed(4); }
+
+bindRange("feed","feed",x=>x.toFixed(4));
+bindRange("kill","kill",x=>x.toFixed(4));
+bindRange("dA","dA",x=>x.toFixed(2));
+bindRange("dB","dB",x=>x.toFixed(2));
+bindRange("dt","dt",x=>x.toFixed(2));
+bindRange("iters","iters",x=>x|0);
+bindRange("thresh","thresh",x=>x.toFixed(2));
+bindRange("width","width",x=>x.toFixed(3));
+bindRange("mspeed","mspeed",x=>x.toFixed(2));
+bindRange("brush","brush",x=>x|0);
+
+$("mode").addEventListener("change",e=>{ P.mode=parseInt(e.target.value); });
+$("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
+$("morph").addEventListener("click",e=>{ P.morph=!P.morph; e.target.classList.toggle("on",P.morph); });
+$("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
+$("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEFAULTS.mode; refreshControls(); });
+$("toggle").addEventListener("click",()=>{ const c=document.body.classList.toggle("collapsed");
+  $("toggle").textContent = c ? "Show" : "Hide"; });
+$("clear").addEventListener("click",()=>{ uploadState(blankField()); blitClearTo(texB); });
+$("seedSpots").addEventListener("click",()=>seed("spots"));
+$("seedCentre").addEventListener("click",()=>seed("centre"));
+$("seedRandom").addEventListener("click",()=>seed("random"));
+$("seedRings").addEventListener("click",()=>seed("rings"));
+
+/* presets */
+const pc=$("presets");
+PRESETS.forEach((pr,i)=>{ const b=document.createElement("button"); b.textContent=`${i+1} ${pr.name}`;
+  b.addEventListener("click",()=>applyPreset(i)); pc.appendChild(b); });
+function applyPreset(i){ const pr=PRESETS[i]; P.feed=pr.feed; P.kill=pr.kill; P.morph=false;
+  $("morph").classList.remove("on"); syncInputs(); }
+
+/* ---------- recording ---------- */
+let rec=null, chunks=[];
+$("record").addEventListener("click",e=>{
+  if(rec){ rec.stop(); return; }
+  const stream=canvas.captureStream(60);
+  const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
+  rec=new MediaRecorder(stream,{ mimeType:mime, videoBitsPerSecond:30000000 });
+  chunks=[]; rec.ondataavailable=ev=>{ if(ev.data.size) chunks.push(ev.data); };
+  rec.onstop=()=>{ const blob=new Blob(chunks,{type:"video/webm"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="recording.webm"; a.click();
+    rec=null; e.target.textContent="● Record"; e.target.classList.add("rec"); };
+  rec.start(); e.target.textContent="■ Stop"; e.target.classList.remove("rec");
+});
+$("snap").addEventListener("click",()=>{ canvas.toBlob(b=>{ const a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download="frame.png"; a.click(); }); });
+
+/* keyboard */
+addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
+  const k=e.key.toLowerCase();
+  if(k===" "){ e.preventDefault(); P.paused=!P.paused; }
+  else if(k==="m"){ $("morph").click(); }
+  else if(k==="r"){ $("record").click(); }
+  else if(k==="c"){ $("clear").click(); }
+  else if(k==="i"){ $("invert").click(); }
+  else if(k==="h"){ $("toggle").click(); }
+  else if(k>="1"&&k<="8"){ applyPreset(parseInt(k)-1); }
+});
+
+/* ---------- go ---------- */
+seed("spots");
+applyPreset(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

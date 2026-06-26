@@ -1,0 +1,20 @@
+# Source reference & extracted frames (kept out of the repo)
+cool art.mov
+frames/
+
+# Generated recordings & renders
+*.webm
+*.mp4
+*.mov
+output.*
+
+# Node / OS
+node_modules/
+.DS_Store
+
+# Claude / tooling files — never commit
+CLAUDE.md
+.claude/
+.claude*
+.mcp.json
+memory/
