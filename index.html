@@ -171,7 +171,10 @@
     <div class="row"><label>Specular</label><input id="spec" type="range" min="0" max="2" step="0.02"><span class="val" id="spec_v"></span></div>
     <div class="row"><label>Rim light</label><input id="rim" type="range" min="0" max="1.5" step="0.02"><span class="val" id="rim_v"></span></div>
     <div class="row"><label>Vignette</label><input id="vignette" type="range" min="0" max="1" step="0.02"><span class="val" id="vignette_v"></span></div>
-    <div class="hint">Lights the pattern as a glossy raised liquid. Threshold &amp; Edge/width above set how fat the fluid tubes are.</div>
+    <div class="row"><label>Reflection</label><input id="env" type="range" min="0" max="1.5" step="0.02"><span class="val" id="env_v"></span></div>
+    <div class="row"><label>Glow / bloom</label><input id="glow" type="range" min="0" max="2" step="0.02"><span class="val" id="glow_v"></span></div>
+    <div class="row"><label>Hue drift</label><input id="hueDrift" type="range" min="0" max="1" step="0.01"><span class="val" id="hueDrift_v"></span></div>
+    <div class="hint">Lights the pattern as a glossy raised liquid with wet reflective beads, a backlit glow and a slowly drifting hue. Threshold &amp; Edge/width above set how fat the fluid tubes are.</div>
   </div>
 
   <div class="grp">
@@ -200,6 +203,10 @@
     <div class="btns" style="margin-top:8px"><button id="tiltBtn">Enable tilt</button></div>
     <div class="row"><label>Tilt flow</label><input id="tiltFlow" type="range" min="0" max="1.5" step="0.05"><span class="val" id="tiltFlow_v"></span></div>
     <div class="hint">On a phone, tilt to make the fluid flow and the highlights slosh like real liquid. Tap <b>Enable tilt</b> first (iOS asks permission). Works best in Ferrofluid mode.</div>
+    <div class="btns" style="margin-top:10px"><button id="lensBtn">Lens bubble</button></div>
+    <div class="row"><label>Lens size</label><input id="lensRadius" type="range" min="0.06" max="0.4" step="0.01"><span class="val" id="lensRadius_v"></span></div>
+    <div class="row"><label>Lens warp</label><input id="lensStr" type="range" min="0.1" max="0.6" step="0.02"><span class="val" id="lensStr_v"></span></div>
+    <div class="hint">A glassy droplet roams the frame, magnifying the pattern beneath it like a fisheye lens — then fades away and returns. Works in every render mode.</div>
   </div>
 
   <div class="grp">
@@ -279,8 +286,14 @@ const P = {
   paused:false,
   // ferrofluid look (mode 3)
   palette:0, light:2.4, relief:2.4, gloss:26, spec:0.95, rim:0.55, vignette:0.45,
-  // spatial regime field — one scalar drifts F & k together along the live band
-  field:0.85, fldGrad:0.013, fldAngle:1.3, fldNoise:0.012, fldScale:3.0,
+  // glossy beads (reflection), backlit glow/bloom, slow hue drift
+  glow:0.7, env:0.6, hue:0, hueDrift:0.12,
+  // fisheye lens bubble
+  lens:false, lensStr:0.35, lensRadius:0.18,
+  // spatial regime field — one scalar drifts F & k together along the live band.
+  // tuned to span fine maze -> coarse beads -> thick worms in one frame (macro-ferro
+  // reference); the kill co-variation keeps every region inside the live band.
+  field:1.0, fldGrad:0.020, fldAngle:1.3, fldNoise:0.018, fldScale:2.5,
   // painting: 0 = seed B, 1 = paint density. dsign = +denser / -finer
   paintMode:0, dsign:1,
   // gyro / tilt
@@ -373,7 +386,20 @@ uniform sampler2D u_state; uniform vec2 u_size;
 uniform int u_mode; uniform float u_thresh,u_width,u_invert;
 uniform vec3 u_fluid,u_bgA,u_bgB,u_specCol,u_rimCol;     // ferrofluid palette
 uniform float u_light,u_relief,u_gloss,u_spec,u_rim,u_vig;
+uniform float u_glow,u_env,u_hue;                        // backlit glow, reflection, hue drift
+uniform vec2 u_lensC; uniform float u_lensR,u_lensStr;   // fisheye lens bubble
 in vec2 v_uv; out vec4 o;
+
+float aspect(){ return u_size.x/u_size.y; }
+/* fisheye magnifier: bulge uv inside a roaming circle (applies to every mode) */
+vec2 applyLens(vec2 uv){
+  if(u_lensStr<=0.0) return uv;
+  vec2 d=uv-u_lensC; float r=length(vec2(d.x*aspect(),d.y))/u_lensR;
+  if(r>=1.0) return uv;
+  return u_lensC + d*(1.0 - u_lensStr*(1.0-r*r));        // <1 magnifies the centre
+}
+float lensMask(vec2 uv){ vec2 d=uv-u_lensC; return length(vec2(d.x*aspect(),d.y))/u_lensR; }
+
 float sampB(vec2 uv){
   // manual bilinear so it stays smooth without float-linear filtering
   vec2 p = uv*u_size - 0.5; vec2 i = floor(p); vec2 f = p - i;
@@ -382,43 +408,76 @@ float sampB(vec2 uv){
   float cc=texture(u_state,t+dy).g, d=texture(u_state,t+dx+dy).g;
   return mix(mix(a,b,f.x), mix(cc,d,f.x), f.y);
 }
-/* smoothed 0..1 height of the fluid film (rounded shoulders -> domed tubes) */
-float Hf(vec2 uv){ return smoothstep(u_thresh-u_width, u_thresh+u_width, sampB(uv)); }
+float Hm(vec2 uv){ return smoothstep(u_thresh-u_width, u_thresh+u_width, sampB(uv)); } // film mask
+float Hn(vec2 uv){ return sqrt(Hm(uv)); }   // domed height -> rounder, more spherical beads
+
+/* rotate an RGB colour around the grey axis -> hue shift */
+vec3 hueRot(vec3 c,float a){ const vec3 k=vec3(0.57735); float ca=cos(a);
+  return c*ca + cross(k,c)*sin(a) + k*dot(k,c)*(1.0-ca); }
+/* small studio environment for the wet reflections on the beads */
+vec3 envCol(vec3 R){
+  float t=clamp(R.y*0.5+0.5,0.0,1.0);
+  vec3 e=mix(u_bgB*0.10, hueRot(u_bgA,u_hue), t);
+  vec3 Ld=normalize(vec3(cos(u_light),sin(u_light),0.7));
+  e += u_specCol*pow(max(dot(R,Ld),0.0),50.0);
+  return e;
+}
+/* soft halo around the bright film — a cheap single-pass bloom approximation */
+float glowMask(vec2 uv){
+  vec2 px=2.5/u_size; float s=Hm(uv)*0.25;
+  for(int i=0;i<8;i++){ float a=float(i)*0.7853981; vec2 d=vec2(cos(a),sin(a));
+    s+=Hm(uv+d*px)*0.0625 + Hm(uv+d*px*2.4)*0.0312; }
+  return clamp(s,0.0,1.0);
+}
 
 void main(){
+  vec2 uv = applyLens(v_uv);
+  vec3 col;
   if(u_mode==3){
-    /* ---- glossy ferrofluid: light the field as a raised liquid film ---- */
+    /* ---- glossy two-tone ferrofluid: bright lit ridges on near-black ---- */
     vec2 px = 1.0/u_size;
-    float h  = Hf(v_uv);
-    float hl = Hf(v_uv-vec2(px.x,0.0)), hr = Hf(v_uv+vec2(px.x,0.0));
-    float hd = Hf(v_uv-vec2(0.0,px.y)), hu = Hf(v_uv+vec2(0.0,px.y));
+    float h  = Hm(uv);
+    float hl = Hn(uv-vec2(px.x,0.0)), hr = Hn(uv+vec2(px.x,0.0));
+    float hd = Hn(uv-vec2(0.0,px.y)), hu = Hn(uv+vec2(0.0,px.y));
     vec3 N = normalize(vec3((hl-hr)*u_relief, (hd-hu)*u_relief, 1.0));
     vec3 L = normalize(vec3(cos(u_light), sin(u_light), 0.65));
-    vec3 V = vec3(0.0,0.0,1.0);
-    vec3 H = normalize(L+V);
+    vec3 V = vec3(0.0,0.0,1.0); vec3 H = normalize(L+V);
     float diff = clamp(dot(N,L),0.0,1.0);
     float spc  = pow(max(dot(N,H),0.0), u_gloss) * u_spec;
-    float fres = pow(1.0-clamp(N.z,0.0,1.0), 3.0);           // rim on steep edges
-    float gm   = clamp(length(vec2(hr-hl,hu-hd))*u_relief*0.6, 0.0, 1.0); // contact groove
+    float fres = pow(1.0-clamp(N.z,0.0,1.0), 3.0);
+    float gm   = clamp(length(vec2(hr-hl,hu-hd))*u_relief*0.6, 0.0, 1.0);
+    vec3 R = reflect(vec3(0.0,0.0,-1.0), N);
 
-    vec3 bg = mix(u_bgA, u_bgB, clamp(v_uv.y*1.15-0.07, 0.0, 1.0));
-    vec3 col = mix(bg, u_fluid, h);                          // fluid sits on the ground
-    col *= mix(1.0, 0.30+0.70*diff, h);                     // shade the fluid, keep ground backlit
-    col *= 1.0 - 0.55*gm;                                   // dark contact line / groove
+    vec3 ridge  = hueRot(u_bgA, u_hue);                      // bright saturated fluid
+    vec3 ground = u_fluid;                                   // near-black trough
+    col  = mix(ground, ridge, h);                           // bright ridges on black
+    col *= mix(1.0, 0.30+0.70*diff, h);                     // shade the domes
+    col *= 1.0 - 0.55*gm;                                   // dark contact groove
     col += u_specCol * spc * (0.35+0.65*h);                 // wet specular highlights
-    col += u_rimCol  * fres * u_rim * h;                    // rim light on bead edges
+    col += envCol(R) * u_env * (0.25+0.75*fres) * h;        // environment reflection (glossy beads)
+    col += hueRot(u_rimCol,u_hue) * fres * u_rim * h;       // rim light on bead edges
+    col += hueRot(u_rimCol,u_hue) * glowMask(uv) * u_glow * 0.7;  // backlit glow / bloom
     float r = length(v_uv-0.5)*1.42;
     col *= 1.0 - u_vig*smoothstep(0.45,1.05,r);             // vignette
-    o = vec4(clamp(col,0.0,1.0), 1.0);
-    return;
+  } else {
+    float B = sampB(uv);
+    float ink;
+    if(u_mode==0){ ink = step(u_thresh, B); }
+    else if(u_mode==1){ ink = smoothstep(u_thresh-u_width, u_thresh+u_width, B); }
+    else { float dd = abs(B-u_thresh); ink = 1.0 - smoothstep(u_width*0.5, u_width, dd); }
+    ink = mix(ink, 1.0-ink, u_invert);
+    col = vec3(1.0-ink);  // ink=1 -> black on white
   }
-  float B = sampB(v_uv);
-  float ink;
-  if(u_mode==0){ ink = step(u_thresh, B); }
-  else if(u_mode==1){ ink = smoothstep(u_thresh-u_width, u_thresh+u_width, B); }
-  else { float dd = abs(B-u_thresh); ink = 1.0 - smoothstep(u_width*0.5, u_width, dd); }
-  ink = mix(ink, 1.0-ink, u_invert);
-  o = vec4(vec3(1.0-ink), 1.0);  // ink=1 -> black on white
+  /* glassy lens rim + glint so the bubble reads as a droplet (all modes) */
+  if(u_lensStr>0.0){
+    float r = lensMask(v_uv);
+    float rim = smoothstep(0.82,0.97,r)*(1.0-smoothstep(0.97,1.05,r));
+    col *= 1.0 - 0.35*rim;                                  // refractive rim
+    vec2 gp = u_lensC + vec2(-0.28,0.30)*u_lensR;           // glint upper-left
+    float gd = length(vec2((v_uv.x-gp.x)*aspect(), v_uv.y-gp.y))/u_lensR;
+    if(u_mode==3) col += vec3(1.0)*smoothstep(0.16,0.0,gd)*0.5*step(r,1.0);
+  }
+  o = vec4(clamp(col,0.0,1.0), 1.0);
 }`;
 
 function sh(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -547,6 +606,10 @@ const RU = {
   relief:gl.getUniformLocation(renderProg,"u_relief"), gloss:gl.getUniformLocation(renderProg,"u_gloss"),
   spec:gl.getUniformLocation(renderProg,"u_spec"), rim:gl.getUniformLocation(renderProg,"u_rim"),
   vig:gl.getUniformLocation(renderProg,"u_vig"),
+  glow:gl.getUniformLocation(renderProg,"u_glow"), env:gl.getUniformLocation(renderProg,"u_env"),
+  hue:gl.getUniformLocation(renderProg,"u_hue"),
+  lensC:gl.getUniformLocation(renderProg,"u_lensC"), lensR:gl.getUniformLocation(renderProg,"u_lensR"),
+  lensStr:gl.getUniformLocation(renderProg,"u_lensStr"),
 };
 
 /* ---------- brush input ---------- */
@@ -594,6 +657,8 @@ function draw(){
   gl.uniform2f(RU.size,SIM_W,SIM_H);
   gl.uniform1i(RU.mode,P.mode); gl.uniform1f(RU.thresh,P.thresh);
   gl.uniform1f(RU.width,P.width); gl.uniform1f(RU.invert,P.invert);
+  gl.uniform1f(RU.glow,P.glow); gl.uniform1f(RU.env,P.env); gl.uniform1f(RU.hue,P.hue);
+  gl.uniform2f(RU.lensC, lensCx, lensCy); gl.uniform1f(RU.lensR, P.lensRadius); gl.uniform1f(RU.lensStr, lensStrCur);
   if(P.mode===3){
     const pal=PALETTES[P.palette]||PALETTES[0];
     gl.uniform3fv(RU.fluid,pal.fluid); gl.uniform3fv(RU.bgA,pal.bgA); gl.uniform3fv(RU.bgB,pal.bgB);
@@ -646,6 +711,21 @@ function maybeRescue(dtSec){
   if(sum/(SIM_W*SIM_H) < 0.004) seed("spots");           // collapsed -> reseed
 }
 
+/* ---------- hue drift + roaming fisheye lens ---------- */
+let lensCx=0.5, lensCy=0.5, lensStrCur=0, lensT=0;
+function smooth01(x,a,b){ x=Math.max(0,Math.min(1,(x-a)/(b-a))); return x*x*(3-2*x); }
+function animateLook(dt){
+  // slow hue drift (warm palette eases through orange -> red -> ... like the reference)
+  P.hue = (P.hue + dt*P.hueDrift*0.25) % 6.2831853;
+  // lens roams on a slow Lissajous path and "appears for a time" then fades away
+  lensT += dt;
+  lensCx = 0.5 + 0.30*Math.sin(lensT*0.21);
+  lensCy = 0.5 + 0.34*Math.sin(lensT*0.16+1.1);
+  let target=0;
+  if(P.lens){ const ph=(lensT*0.045)%1.0; target = P.lensStr*smooth01(ph,0.0,0.18)*(1.0-smooth01(ph,0.72,0.96)); }
+  lensStrCur += (target-lensStrCur)*0.06;
+}
+
 /* ---------- main loop ---------- */
 let last=performance.now(), fps=0, frames=0, fpsT=0;
 function loop(now){
@@ -656,6 +736,7 @@ function loop(now){
     maybeRescue(dt);
   }
   if(brush.down && P.paintMode===1) paintDab();   // paint the density field
+  animateLook(dt);
   draw();
   frames++; fpsT+=dt; if(fpsT>=0.5){ fps=Math.round(frames/fpsT); frames=0; fpsT=0; }
   document.getElementById("status").textContent =
@@ -676,6 +757,7 @@ function refreshControls(){ RANGES.forEach(f=>f());
   $("palette").value=String(P.palette);
   $("invert").classList.toggle("on",!!P.invert);
   $("morph").classList.toggle("on",P.morph);
+  $("lensBtn").classList.toggle("on",P.lens);
   setPaintMode(P.paintMode, P.dsign);
   updateModeUI(); }
 function syncInputs(){ $("feed").value=P.feed; $("feed_v").textContent=P.feed.toFixed(4);
@@ -704,6 +786,11 @@ bindRange("fldAngle","fldAngle",x=>x.toFixed(2));
 bindRange("fldNoise","fldNoise",x=>x.toFixed(4));
 bindRange("fldScale","fldScale",x=>x.toFixed(1));
 bindRange("tiltFlow","tiltFlow",x=>x.toFixed(2));
+bindRange("env","env",x=>x.toFixed(2));
+bindRange("glow","glow",x=>x.toFixed(2));
+bindRange("hueDrift","hueDrift",x=>x.toFixed(2));
+bindRange("lensRadius","lensRadius",x=>x.toFixed(2));
+bindRange("lensStr","lensStr",x=>x.toFixed(2));
 
 /* palette dropdown */
 PALETTES.forEach((p,i)=>{ const o=document.createElement("option"); o.value=String(i); o.textContent=p.name; $("palette").appendChild(o); });
@@ -747,6 +834,7 @@ function enableTilt(){
 $("tiltBtn").addEventListener("click",()=> tiltOn ? stopTilt() : enableTilt());
 $("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
 $("morph").addEventListener("click",e=>{ P.morph=!P.morph; e.target.classList.toggle("on",P.morph); });
+$("lensBtn").addEventListener("click",e=>{ P.lens=!P.lens; e.target.classList.toggle("on",P.lens); });
 $("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
 $("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEFAULTS.mode; refreshControls(); });
 $("toggle").addEventListener("click",()=>{ const c=document.body.classList.toggle("collapsed");
@@ -768,6 +856,12 @@ const HELP = {
   spec:["Specular","Strength of the wet highlights on the fluid."],
   rim:["Rim light","Brightness of the light catching the edges of beads and ridges."],
   vignette:["Vignette","Darkening toward the corners for the backlit macro-photo feel."],
+  env:["Reflection","Strength of the wet studio reflection on the glossy beads — the key to the liquid-metal sheen seen in the reference."],
+  glow:["Glow / bloom","Warm light blooming around the bright fluid, for the backlit macro-photo luminosity."],
+  hueDrift:["Hue drift","How fast the palette slowly eases through hues over time. 0 holds a fixed colour."],
+  lensBtn:["Lens bubble","A glassy droplet that roams the frame and magnifies the pattern beneath it like a fisheye lens, then fades and returns. Works in every render mode."],
+  lensRadius:["Lens size","How big the magnifying droplet is."],
+  lensStr:["Lens warp","How strongly the droplet bulges and magnifies the pattern beneath it."],
   field:["Field amount","How strongly the regime varies across the frame. 0 = one uniform pattern; higher = thick worms in one area, fine spots and bubbly holes in another."],
   fldGrad:["Gradient","A smooth ramp of density across the frame, so the pattern thickens toward one side."],
   fldAngle:["Gradient angle","Direction of that density ramp."],
