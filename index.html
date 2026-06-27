@@ -260,7 +260,7 @@
    recording back to 1260×1746, so a smaller mobile resolution stays compatible. */
 const MOBILE = (matchMedia("(pointer:coarse)").matches || matchMedia("(max-width:760px)").matches)
   && !matchMedia("(min-width:1100px)").matches;
-const SRC_W = 1260, SRC_H = 1746;                 // source aspect (matches "cool art.mov")
+const SRC_W = 1260, SRC_H = 1746;                 // portrait output resolution
 const ASPECT = SRC_W / SRC_H;
 const OUT_W = MOBILE ? 760 : SRC_W;               // canvas backing-store resolution
 const OUT_H = Math.round(OUT_W / ASPECT);
