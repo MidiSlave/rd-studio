@@ -2,16 +2,21 @@
 <html lang="en-AU">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0c0d10">
 <title>Reaction-Diffusion Studio — B&amp;W</title>
 <style>
   :root{ --bg:#0c0d10; --panel:#16181d; --line:#262a31; --txt:#d7dbe2; --dim:#838b98; --accent:#e7e9ee; }
   *{ box-sizing:border-box; }
   html,body{ margin:0; height:100%; background:var(--bg); color:var(--txt);
-    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden;
+    -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
   #stage{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
   canvas{ background:#fff; box-shadow:0 10px 60px rgba(0,0,0,.6); cursor:crosshair; touch-action:none;
-    max-width:calc(100vw - 320px); max-height:100vh; image-rendering:auto; transition:max-width .25s ease; }
+    max-width:calc(100vw - 320px); max-height:100vh; max-height:100dvh; image-rendering:auto; transition:max-width .25s ease; }
   body.collapsed canvas{ max-width:100vw; }
   #panel{ position:fixed; top:0; right:0; width:300px; height:100%; background:var(--panel);
     border-left:1px solid var(--line); padding:14px 14px 40px; overflow-y:auto; overflow-x:hidden; transition:transform .25s ease;
@@ -52,6 +57,62 @@
   #status{ position:fixed; left:10px; bottom:8px; color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
   #err{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:40px;
     background:#0c0d10; color:#ff7a6b; text-align:center; font-size:14px; }
+
+  /* ============================ mobile / touch ============================ */
+  /* Portrait phones: canvas fills the screen, the panel becomes a bottom sheet
+     that slides up over it instead of squeezing it into a sliver. */
+  @media (max-width:760px){
+    #stage{ align-items:flex-start; padding-top:max(8px,env(safe-area-inset-top)); }
+    canvas{ max-width:100vw; max-height:100dvh; transition:none; }
+    body.collapsed canvas{ max-width:100vw; }
+
+    #panel{
+      width:100%; height:auto; max-height:82vh; max-height:82dvh;
+      top:auto; bottom:0; left:0; right:0;
+      border-left:none; border-top:1px solid var(--line); border-radius:16px 16px 0 0;
+      padding:8px 16px calc(28px + env(safe-area-inset-bottom));
+      transform:translateY(0); box-shadow:0 -14px 40px rgba(0,0,0,.55);
+      overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+    }
+    /* grab handle */
+    #panel::before{ content:""; display:block; width:40px; height:4px; border-radius:3px;
+      background:#3a404a; margin:2px auto 10px; }
+    body.collapsed #panel{ transform:translateY(100%); }
+
+    /* toggle pinned top-right, always reachable */
+    #toggle, body.collapsed #toggle{ top:max(10px,env(safe-area-inset-top)); right:max(10px,env(safe-area-inset-right)); }
+
+    /* roomier tap targets */
+    button{ padding:10px 14px; font-size:14px; }
+    select{ padding:10px; font-size:14px; }
+    .row{ gap:10px; margin-bottom:12px; }
+    .row label{ flex-basis:78px; font-size:13px; }
+    .row .val{ font-size:13px; }
+    .row input[type=range]{ height:38px; }
+    .row input[type=range]::-webkit-slider-thumb{ width:24px; height:24px; }
+    .btns{ gap:8px; }
+    #toggle{ padding:9px 14px; font-size:14px; }
+
+    /* help becomes a top banner spanning the width, above the sheet */
+    #help{ left:10px; right:10px; top:max(54px,calc(env(safe-area-inset-top) + 44px));
+      bottom:auto; width:auto; max-width:none; }
+  }
+
+  /* Short / landscape phones: a right-side overlay sheet uses the limited
+     height better than a bottom sheet would. */
+  @media (max-height:540px) and (pointer:coarse){
+    #stage{ align-items:center; padding-top:0; }
+    canvas{ max-width:100vw; max-height:100dvh; transition:none; }
+    body.collapsed canvas{ max-width:100vw; }
+    #panel{ width:min(320px,86vw); height:100%; top:0; bottom:auto; left:auto; right:0;
+      border-left:1px solid var(--line); border-top:none; border-radius:0;
+      padding:14px 16px calc(40px + env(safe-area-inset-bottom)); transform:translateX(0);
+      box-shadow:-14px 0 40px rgba(0,0,0,.55); }
+    #panel::before{ display:none; }
+    body.collapsed #panel{ transform:translateX(100%); }
+    #toggle, body.collapsed #toggle{ top:10px; right:max(10px,env(safe-area-inset-right)); }
+    #help{ left:10px; right:auto; top:auto; bottom:10px; width:min(330px,60vw); max-width:none; }
+  }
 </style>
 </head>
 <body>
@@ -140,9 +201,17 @@
 <script type="text/javascript">
 "use strict";
 /* ---------- config ---------- */
-const OUT_W = 1260, OUT_H = 1746;                 // display/export resolution (matches source)
-const ASPECT = OUT_W / OUT_H;
-let SIM_W = 600, SIM_H = Math.round(SIM_W / ASPECT);   // simulation grid
+/* Detect touch / small-screen devices so we can lighten the GPU load: the full
+   1260×1746 backing store + 600-wide sim grid is wasteful on a phone where the
+   canvas is only a few hundred CSS pixels wide. assemble.sh rescales any
+   recording back to 1260×1746, so a smaller mobile resolution stays compatible. */
+const MOBILE = (matchMedia("(pointer:coarse)").matches || matchMedia("(max-width:760px)").matches)
+  && !matchMedia("(min-width:1100px)").matches;
+const SRC_W = 1260, SRC_H = 1746;                 // source aspect (matches "cool art.mov")
+const ASPECT = SRC_W / SRC_H;
+const OUT_W = MOBILE ? 760 : SRC_W;               // canvas backing-store resolution
+const OUT_H = Math.round(OUT_W / ASPECT);
+let SIM_W = MOBILE ? 380 : 600, SIM_H = Math.round(SIM_W / ASPECT);   // simulation grid
 
 /* ---------- presets (Pearson / Munafo classification of Gray-Scott regimes) ---------- */
 const PRESETS = [
@@ -474,11 +543,26 @@ function helpFor(t){
   return null;
 }
 let helpOn=false;
+function showHelp(h){ $("help_t").textContent=h[0]; $("help_b").textContent=h[1]; }
 function setHelp(on){ helpOn=on; document.body.classList.toggle("help-on",on); $("helpBtn").classList.toggle("on",on);
-  if(on){ $("help_t").textContent="Help"; $("help_b").textContent="Hover any control to see what it does."; } }
+  if(on){ $("help_t").textContent="Help";
+    $("help_b").textContent = MOBILE ? "Tap any control to see what it does." : "Hover any control to see what it does."; } }
 $("helpBtn").addEventListener("click",()=>setHelp(!helpOn));
-$("panel").addEventListener("mouseover",e=>{ if(!helpOn) return; const h=helpFor(e.target);
-  if(h){ $("help_t").textContent=h[0]; $("help_b").textContent=h[1]; } });
+$("panel").addEventListener("mouseover",e=>{ if(!helpOn) return; const h=helpFor(e.target); if(h) showHelp(h); });
+/* touch: in help mode a tap explains the control instead of operating it.
+   touchstart (not pointerdown) is what we must cancel to stop a range slider
+   from jumping to the tapped position; doing so also suppresses the synthetic
+   click on most browsers, but we guard the click too in case it still fires. */
+let swallowClick=false;
+$("panel").addEventListener("touchstart",e=>{
+  if(!helpOn || e.target.closest("#helpBtn")) return;   // let the Help button toggle off
+  const h=helpFor(e.target);
+  if(h){ e.preventDefault(); showHelp(h); swallowClick=true;
+    setTimeout(()=>{ swallowClick=false; },700); }   // clear if no click follows
+},{capture:true,passive:false});
+$("panel").addEventListener("click",e=>{
+  if(swallowClick){ e.preventDefault(); e.stopPropagation(); swallowClick=false; }
+},true);
 $("clear").addEventListener("click",()=>{ uploadState(blankField()); blitClearTo(texB); });
 $("seedSpots").addEventListener("click",()=>seed("spots"));
 $("seedCentre").addEventListener("click",()=>seed("centre"));
@@ -523,6 +607,8 @@ addEventListener("keydown",e=>{
 });
 
 /* ---------- go ---------- */
+/* on phones, start with the panel tucked away so the artwork is front-and-centre */
+if(MOBILE){ document.body.classList.add("collapsed"); $("toggle").textContent="Show"; }
 seed("spots");
 applyPreset(0);
 requestAnimationFrame(loop);

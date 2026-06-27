@@ -42,6 +42,14 @@ node serve.mjs
 
 Keyboard: `Space` pause · `M` morph · `R` record · `C` clear · `I` invert · `1`–`8` presets.
 
+### On mobile
+
+The studio is touch-friendly. The canvas fills the screen and the controls live
+in a slide-up sheet (tap **Show** / drag down to dismiss). Tap the sheet's
+controls as usual, drag on the canvas to seed, and turn on **? Help** then tap any
+control to read what it does. To save GPU on phones the simulation runs at a
+lighter resolution — `assemble.sh` still rescales any recording back to 1260×1746.
+
 ## Make a finished video
 
 After recording (`recording.webm` lands in this folder):
