@@ -59,15 +59,27 @@ node serve.mjs            # then open http://localhost:8099/
 - **Glow / bloom** — warm backlit halo around the bright fluid.
 - **Hue drift** — slowly eases the palette through hues over time.
 
+**Colour pickup** (glossy mode) — the fluid carries a colour that advects, diffuses and blends as it
+moves, picking up and mixing hues as it flows (the oil-on-water look).
+- **Colour bleed** — turn it on. The hues are anchored to the selected **Palette**.
+- **Spread** — how far the hues wander from the palette (0 = palette only, high = rainbow).
+- **Colour scale** — size of the colour regions · **Bleed** — how much they diffuse and blend.
+- Drive it with **Flow** (below): the more the fluid moves, the more it picks up and mixes.
+
 **Regime field (density)** — different areas of one frame can sit in different regimes (fine maze,
 coarse beads, thick worms) at once.
 - **Field amount, Gradient, Grad angle, Noise, Noise scale** — shape the spatial variation.
 - **Draw seed / Paint denser / Paint finer / Reset density** — paint the density field directly on the canvas.
 
-**Motion**
-- **Auto-morph (M)** — drifts F & k along a closed loop through the live band, so the pattern keeps morphing without ever dying. **Morph speed** sets the pace.
+**Motion & flow**
+- **Flow** — push the fluid in a direction (**Flow** strength + **Flow angle**) so it drifts and drags into combs. Works on desktop with no gyro, and drives the colour pickup.
 - **Tilt** — on a phone, tilt to make the fluid flow and the highlights slosh (iOS asks permission). **Tilt flow** sets the strength.
 - **Lens bubble** — a glassy droplet that magnifies the pattern beneath it like a fisheye lens. Stationary by default — **drag it on the canvas** to move it — or turn on **Roam** to let it wander (**Roam speed / range**). **Lens size / warp** set its look. Works in every render mode.
+
+**Modulation — an LFO on any parameter**
+- Every slider has a small **`~`** button. Tap it to modulate that parameter with an **LFO** — a compact **rate / depth / waveform** strip appears under the slider and the value sweeps on its own. Waveforms: sine, triangle, saw, square, random (sample-&-hold).
+- **Morph (M)** is a one-tap preset: phase-offset LFOs on Feed + Kill (what Auto-morph used to do). Tap again to clear.
+- **Reset to defaults** clears all LFOs.
 
 **Seed / canvas**
 - **Spots / Centre / Random / Rings**, **Clear**, **Brush size** — or just **drag on the canvas** to seed.
@@ -103,7 +115,7 @@ clip, render in a B&W mode before recording.)
 
 1. Pick **Coral**, hit **Spots**, let it fill in.
 2. For the glossy look, leave **Ferrofluid** on; for mono, hit **Classic B&W**.
-3. Turn on **Auto-morph** (morph speed ~0.4) and let it wander.
+3. Hit **Morph** to set it wandering (or tap **~** on any slider to modulate just that one).
 4. **Record** ~30s, then `./assemble.sh`.
 
 ## Deploying the demo
