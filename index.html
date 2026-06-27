@@ -188,9 +188,10 @@
   <div class="grp" id="colGrp">
     <h2>Colour pickup</h2>
     <div class="btns"><button id="colBtn">Colour bleed</button></div>
+    <div class="row"><label>Spread</label><input id="colSpread" type="range" min="0" max="3.14" step="0.02"><span class="val" id="colSpread_v"></span></div>
     <div class="row"><label>Colour scale</label><input id="colScale" type="range" min="0.3" max="5" step="0.1"><span class="val" id="colScale_v"></span></div>
     <div class="row"><label>Bleed</label><input id="colBleed" type="range" min="0" max="1" step="0.02"><span class="val" id="colBleed_v"></span></div>
-    <div class="hint">The fluid carries a colour that diffuses and blends as it moves, picking up &amp; mixing hues as it flows (drive it with <b>Flow</b>). Ferrofluid mode.</div>
+    <div class="hint">The fluid picks up &amp; blends a range of hues <b>around the selected Palette</b> as it moves (drive it with <b>Flow</b>). <b>Spread</b> = how far the hues wander from the palette (0 = palette only, high = rainbow). Ferrofluid mode.</div>
   </div>
 
   <div class="grp">
@@ -322,7 +323,7 @@ const P = {
   tilt:false, tiltFlow:0.55,
   // manual flow (desktop) + advected colour pickup / bleed
   flowAngle:1.0, flowStr:0.0,
-  colour:false, colScale:1.6, colBleed:0.5, colShift:0,
+  colour:false, colScale:1.6, colBleed:0.5, colSpread:1.3, colShift:0,
 };
 const DEFAULTS = Object.freeze({ ...P });
 
@@ -423,7 +424,7 @@ uniform int u_mode; uniform float u_thresh,u_width,u_invert;
 uniform vec3 u_fluid,u_bgA,u_bgB,u_specCol,u_rimCol;     // ferrofluid palette
 uniform float u_light,u_relief,u_gloss,u_spec,u_rim,u_vig;
 uniform float u_glow,u_env,u_hue;                        // backlit glow, reflection, hue drift
-uniform float u_colOn;                                   // colour pickup on/off
+uniform float u_colOn,u_colSpread;                       // colour pickup (spread = hue range around palette)
 uniform vec2 u_lensC; uniform float u_lensR,u_lensStr;   // fisheye lens bubble
 in vec2 v_uv; out vec4 o;
 
@@ -454,13 +455,6 @@ float sampT(vec2 uv){   // advected tint coordinate (.b), bilinear
   float cc=texture(u_state,t+dy).b, d=texture(u_state,t+dx+dy).b;
   return mix(mix(a,b,f.x),mix(cc,d,f.x),f.y);
 }
-/* warm oil/heat ramp the fluid picks up & blends as it moves (red->orange->amber->olive) */
-vec3 colRamp(float t){ t=fract(t); float x=t*4.0;
-  vec3 c0=vec3(0.72,0.12,0.05), c1=vec3(0.95,0.45,0.07), c2=vec3(1.00,0.82,0.16), c3=vec3(0.46,0.55,0.12);
-  if(x<1.0) return mix(c0,c1,x);
-  if(x<2.0) return mix(c1,c2,x-1.0);
-  if(x<3.0) return mix(c2,c3,x-2.0);
-  return mix(c3,c0,x-3.0); }
 
 /* rotate an RGB colour around the grey axis -> hue shift */
 vec3 hueRot(vec3 c,float a){ const vec3 k=vec3(0.57735); float ca=cos(a);
@@ -499,7 +493,8 @@ void main(){
     float gm   = clamp(length(vec2(hr-hl,hu-hd))*u_relief*0.6, 0.0, 1.0);
     vec3 R = reflect(vec3(0.0,0.0,-1.0), N);
 
-    vec3 ridge  = (u_colOn>0.5) ? hueRot(colRamp(sampT(uv)), u_hue) : hueRot(u_bgA, u_hue); // picked-up colour or palette
+    float cshift = (u_colOn>0.5) ? (sampT(uv)-0.5)*u_colSpread : 0.0; // hue offset around the palette
+    vec3 ridge  = hueRot(u_bgA, u_hue + cshift);            // palette colour, spread & blended by pickup
     vec3 ground = u_fluid;                                   // near-black trough
     col  = mix(ground, ridge, h);                           // bright ridges on black
     col *= mix(1.0, 0.30+0.70*diff, h);                     // shade the domes
@@ -661,6 +656,7 @@ const RU = {
   vig:gl.getUniformLocation(renderProg,"u_vig"),
   glow:gl.getUniformLocation(renderProg,"u_glow"), env:gl.getUniformLocation(renderProg,"u_env"),
   hue:gl.getUniformLocation(renderProg,"u_hue"), colOn:gl.getUniformLocation(renderProg,"u_colOn"),
+  colSpread:gl.getUniformLocation(renderProg,"u_colSpread"),
   lensC:gl.getUniformLocation(renderProg,"u_lensC"), lensR:gl.getUniformLocation(renderProg,"u_lensR"),
   lensStr:gl.getUniformLocation(renderProg,"u_lensStr"),
 };
@@ -722,7 +718,7 @@ function draw(){
   gl.uniform1i(RU.mode,P.mode); gl.uniform1f(RU.thresh,P.thresh);
   gl.uniform1f(RU.width,P.width); gl.uniform1f(RU.invert,P.invert);
   gl.uniform1f(RU.glow,P.glow); gl.uniform1f(RU.env,P.env); gl.uniform1f(RU.hue,P.hue);
-  gl.uniform1f(RU.colOn, P.colour?1:0);
+  gl.uniform1f(RU.colOn, P.colour?1:0); gl.uniform1f(RU.colSpread, P.colSpread);
   gl.uniform2f(RU.lensC, lensCx, lensCy); gl.uniform1f(RU.lensR, P.lensRadius); gl.uniform1f(RU.lensStr, lensStrCur);
   if(P.mode===3){
     const pal=PALETTES[P.palette]||PALETTES[0];
@@ -864,6 +860,7 @@ bindRange("lensSpeed","lensSpeed",x=>x.toFixed(2));
 bindRange("lensRange","lensRange",x=>x.toFixed(2));
 bindRange("flowStr","flowStr",x=>x.toFixed(2));
 bindRange("flowAngle","flowAngle",x=>x.toFixed(2));
+bindRange("colSpread","colSpread",x=>x.toFixed(2));
 bindRange("colScale","colScale",x=>x.toFixed(1));
 bindRange("colBleed","colBleed",x=>x.toFixed(2));
 
@@ -944,7 +941,8 @@ const HELP = {
   lensRange:["Roam range","How far the lens wanders from its current spot when Roam is on."],
   flowStr:["Flow","Push the fluid in a direction so it flows and drags into combs. Works on desktop with no tilt needed, and drives the colour pickup."],
   flowAngle:["Flow angle","The direction the fluid flows."],
-  colBtn:["Colour bleed","The fluid carries a colour that diffuses and blends as it moves, picking up & mixing hues as it flows. Ferrofluid mode — drive it with Flow."],
+  colBtn:["Colour bleed","The fluid picks up & blends a range of hues around the selected Palette as it moves. Ferrofluid mode — drive it with Flow."],
+  colSpread:["Spread","How far the picked-up hues wander from the Palette colour. 0 = palette only; high = full rainbow."],
   colScale:["Colour scale","Size of the colour regions the fluid picks up: small = many hues close together, large = broad washes."],
   colBleed:["Bleed","How much the picked-up colours diffuse and blend into one another."],
   field:["Field amount","How strongly the regime varies across the frame. 0 = one uniform pattern; higher = thick worms in one area, fine spots and bubbly holes in another."],
