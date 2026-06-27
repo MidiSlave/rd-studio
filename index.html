@@ -59,6 +59,12 @@
   button:hover{ background:#2a2f38; border-color:#3a404a; }
   button.on{ background:#e7e9ee; color:#111; border-color:#e7e9ee; }
   button.rec{ background:#c0392b; color:#fff; border-color:#c0392b; }
+  .row button.lfo{ flex:0 0 auto; padding:3px 7px; font-size:13px; line-height:1; font-weight:700; color:var(--dim); }
+  .row button.lfo.on{ background:#e7e9ee; color:#111; border-color:#e7e9ee; }
+  .lfostrip{ margin:-3px 0 9px 12px; padding-left:9px; border-left:2px solid #2c313a; }
+  .lfostrip .row{ margin-bottom:5px; }
+  .lfostrip label{ flex-basis:58px; }
+  .grp.collapsed .lfostrip{ display:none; }
   select{ background:#20242b; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:5px; flex:1 1 auto; min-width:0; }
   .hint{ color:var(--dim); font-size:10.5px; margin-top:8px; }
   kbd{ background:#20242b; border:1px solid var(--line); border-radius:3px; padding:0 4px; font-size:10px; }
@@ -213,10 +219,9 @@
   <div class="grp">
     <h2>Motion</h2>
     <div class="btns">
-      <button id="morph">Auto-morph</button>
+      <button id="morphBtn">Morph</button>
     </div>
-    <div class="row"><label>Morph speed</label><input id="mspeed" type="range" min="0.05" max="2" step="0.05"><span class="val" id="mspeed_v"></span></div>
-    <div class="hint">Auto-morph slowly drifts F &amp; k through the interesting band so the pattern keeps morphing between regimes.</div>
+    <div class="hint">Tap any <b>~</b> beside a slider to give that parameter an LFO (rate, depth, waveform) — the value sweeps on its own. <b>Morph</b> is a one-tap preset: phase-offset LFOs on Feed &amp; Kill.</div>
     <div class="row" style="margin-top:8px"><label>Flow</label><input id="flowStr" type="range" min="0" max="1.5" step="0.02"><span class="val" id="flowStr_v"></span></div>
     <div class="row"><label>Flow angle</label><input id="flowAngle" type="range" min="0" max="6.28" step="0.02"><span class="val" id="flowAngle_v"></span></div>
     <div class="hint">Push the fluid in a direction so it flows and drags into combs — like tilting, but works on desktop too. Drives the colour pickup.</div>
@@ -304,7 +309,7 @@ const PALETTES = [
 const P = {
   feed:0.0545, kill:0.0620, dA:1.0, dB:0.5, dt:1.0, iters:14,
   mode:3, thresh:0.18, width:0.06, invert:0,
-  morph:false, mspeed:0.5, brush:24,
+  brush:24,
   paused:false,
   // ferrofluid look (mode 3)
   palette:0, light:2.4, relief:2.4, gloss:26, spec:0.95, rim:0.55, vignette:0.45,
@@ -403,7 +408,9 @@ void main(){
   float A=c.r,B=c.g; float rab=A*B*B;
   A += (u_dA*lap.r - rab + feed*(1.0-A))*u_dt;
   B += (u_dB*lap.g + rab - (kill+feed)*B)*u_dt;
-  if(u_brush.x>=0.0 && distance(uv,u_brush) < u_brushR){ B += u_brushAmt; A -= u_brushAmt*0.5; }
+  if(u_brush.x>=0.0){ float bd=distance(uv,u_brush);
+    float fall=exp(-(bd*bd)/(u_brushR*u_brushR*0.38));   // soft gaussian dab, no hard brush head
+    B += u_brushAmt*fall; A -= u_brushAmt*0.5*fall; }
 
   /* colour pickup: the fluid carries a "tint" coordinate (.b) that advects with
      the flow, diffuses (bleed) and slowly relaxes toward a spatial colour source,
@@ -683,7 +690,7 @@ function step(){
   gl.uniform1f(U.dA,P.dA); gl.uniform1f(U.dB,P.dB);
   gl.uniform1f(U.feed,P.feed); gl.uniform1f(U.kill,P.kill); gl.uniform1f(U.dt,P.dt);
   gl.uniform1f(U.brushR, P.brush/Math.min(SIM_W,SIM_H));
-  gl.uniform1f(U.brushAmt, 0.9);
+  gl.uniform1f(U.brushAmt, 0.75);
   gl.uniform1f(U.field,P.field); gl.uniform1f(U.fGrad,P.fldGrad); gl.uniform1f(U.fAngle,P.fldAngle);
   gl.uniform1f(U.fNoise,P.fldNoise); gl.uniform1f(U.fScale,P.fldScale);
   // advection: manual Flow (works on desktop) plus gyro tilt if enabled
@@ -736,34 +743,35 @@ function draw(){
 /* Gray-Scott only lives in a narrow curved band; interpolating between viable
    waypoints keeps the trajectory inside it so the pattern never drifts into the
    empty/extinction zone. */
-const MORPH_PATH = [
-  {feed:0.0545, kill:0.0620},  // coral
-  {feed:0.0500, kill:0.0605},
-  {feed:0.0420, kill:0.0590},  // holes
-  {feed:0.0340, kill:0.0575},
-  {feed:0.0290, kill:0.0560},  // maze
-  {feed:0.0260, kill:0.0545},  // zebra
-  {feed:0.0300, kill:0.0540},
-  {feed:0.0370, kill:0.0585},  // mitosis (kept off the high-kill death edge)
-  {feed:0.0460, kill:0.0605},
-  {feed:0.0540, kill:0.0615},
-];
-let mphase=0;
-function morphStep(dtSec){
-  mphase += dtSec * P.mspeed * 0.25;     // ~8s per segment at morph speed 0.5
-  const N=MORPH_PATH.length;
-  const f=((mphase%N)+N)%N, i=Math.floor(f), frac=f-i;
-  const a=MORPH_PATH[i], b=MORPH_PATH[(i+1)%N];
-  const s=frac*frac*(3-2*frac);          // smoothstep ease
-  P.feed = a.feed+(b.feed-a.feed)*s;
-  P.kill = a.kill+(b.kill-a.kill)*s;
-  syncInputs();
+/* Each modulatable slider has an entry in MOD (created by bindRange). When its
+   LFO is on, the value oscillates around the user-set base value each frame. */
+function modStep(dt){
+  for(const key in MOD){ const m=MOD[key]; if(!m.on) continue;
+    m.phase += dt*m.rate;
+    const x=m.phase-Math.floor(m.phase); let w;
+    if(m.wave===0) w=Math.sin(m.phase*6.2831853);          // sine
+    else if(m.wave===1) w=1.0-4.0*Math.abs(x-0.5);         // triangle
+    else if(m.wave===2) w=2.0*x-1.0;                       // saw
+    else if(m.wave===3) w=x<0.5?1.0:-1.0;                  // square
+    else { const c=Math.floor(m.phase); if(c!==m.rndCyc){ m.rndCyc=c; m.rndVal=Math.random()*2-1; } w=m.rndVal; } // S&H
+    const amp=m.depth*(m.max-m.min)*0.5;
+    const eff=Math.min(m.max, Math.max(m.min, m.base + amp*w));
+    P[key]=eff; m.el.value=eff; m.v.textContent=m.fmt(eff);
+  }
+}
+/* "Morph" preset: phase-offset LFOs on Feed + Kill (what Auto-morph used to do) */
+function applyMorph(){
+  const on = MOD.feed.on || MOD.kill.on;
+  if(on){ setLfo("feed",{on:false}); setLfo("kill",{on:false}); }
+  else { setLfo("feed",{on:true,rate:0.06,depth:0.40,wave:0,phase:0});
+         setLfo("kill",{on:true,rate:0.06,depth:0.24,wave:0,phase:0.15}); }
+  $("morphBtn").classList.toggle("on", MOD.feed.on);
 }
 
 /* ---------- safety: if the field collapses while morphing, re-seed so it recovers ---------- */
 let readBuf=null, rescueT=0;
 function maybeRescue(dtSec){
-  if(!P.morph){ rescueT=0; return; }
+  if(!(MOD.feed.on || MOD.kill.on)){ rescueT=0; return; }
   rescueT+=dtSec; if(rescueT<2.0) return; rescueT=0;     // check ~every 2s
   if(!readBuf) readBuf=new Float32Array(SIM_W*SIM_H*4);
   gl.bindFramebuffer(gl.FRAMEBUFFER,fboA);
@@ -794,7 +802,7 @@ let last=performance.now(), fps=0, frames=0, fpsT=0;
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   if(!P.paused){
-    if(P.morph) morphStep(dt);
+    modStep(dt);
     step();
     maybeRescue(dt);
   }
@@ -809,24 +817,63 @@ function loop(now){
 
 /* ---------- UI wiring ---------- */
 const $=id=>document.getElementById(id);
-const RANGES=[];
-function bindRange(id,key,fmt){ const el=$(id), v=$(id+"_v");
-  const set=()=>{ el.value=P[key]; v.textContent=fmt?fmt(P[key]):P[key]; };
-  const upd=()=>{ P[key]=parseFloat(el.value); v.textContent=fmt?fmt(P[key]):P[key]; };
-  el.addEventListener("input",upd); set();
-  RANGES.push(set); }
+const RANGES=[]; const MOD={};
+function bindRange(id,key,fmt){ const el=$(id), v=$(id+"_v"); fmt=fmt||(x=>x);
+  const m={on:false, rate:0.20, depth:0.30, phase:0, wave:0, base:P[key],
+    min:parseFloat(el.min), max:parseFloat(el.max), el, v, fmt, rndCyc:-1, rndVal:0};
+  MOD[key]=m;
+  el.addEventListener("input",()=>{ m.base=parseFloat(el.value); if(!m.on){ P[key]=m.base; v.textContent=fmt(P[key]); } });
+  el.value=P[key]; v.textContent=fmt(P[key]);
+  RANGES.push(()=>{ m.base=P[key]; if(!m.on){ el.value=P[key]; v.textContent=fmt(P[key]); } });
+  addLfoToggle(key); }
+/* set/clear a parameter's base without disturbing its LFO */
+function setBase(key,val){ const m=MOD[key]; if(!m) return; m.base=val;
+  if(!m.on){ P[key]=val; m.el.value=val; m.v.textContent=m.fmt(val); } }
+function clearAllLfo(){ for(const k in MOD){ const m=MOD[k]; if(!m.on) continue; m.on=false;
+  if(m.btn) m.btn.classList.remove("on"); if(m.strip) m.strip.style.display="none"; } }
 function refreshControls(){ RANGES.forEach(f=>f());
   $("mode").value=String(P.mode);
   $("palette").value=String(P.palette);
   $("invert").classList.toggle("on",!!P.invert);
-  $("morph").classList.toggle("on",P.morph);
   $("lensBtn").classList.toggle("on",P.lens);
   $("lensRoamBtn").classList.toggle("on",P.lensRoam);
   $("colBtn").classList.toggle("on",P.colour);
+  if($("morphBtn")) $("morphBtn").classList.toggle("on", MOD.feed.on);
   setPaintMode(P.paintMode, P.dsign);
   updateModeUI(); }
-function syncInputs(){ $("feed").value=P.feed; $("feed_v").textContent=P.feed.toFixed(4);
-  $("kill").value=P.kill; $("kill_v").textContent=P.kill.toFixed(4); }
+
+/* ---------- inline LFO toggle + strip for a slider ---------- */
+const WAVES=["sine","triangle","saw","square","random"];
+function addLfoToggle(key){
+  const m=MOD[key], row=m.el.closest(".row"); if(!row) return;
+  const btn=document.createElement("button"); btn.className="lfo"; btn.textContent="~";
+  btn.title="Modulate this with an LFO"; row.appendChild(btn); m.btn=btn;
+  const strip=document.createElement("div"); strip.className="lfostrip"; strip.style.display="none";
+  let opts=""; WAVES.forEach((w,i)=>opts+=`<option value="${i}">${w}</option>`);
+  strip.innerHTML=
+    `<div class="row"><label>~ rate</label><input type="range" class="lr" min="0.01" max="3" step="0.01"><span class="val lrv"></span></div>`+
+    `<div class="row"><label>~ depth</label><input type="range" class="ld" min="0" max="1" step="0.01"><span class="val ldv"></span></div>`+
+    `<div class="row"><label>~ wave</label><select class="lw">${opts}</select></div>`;
+  row.after(strip); m.strip=strip;
+  const lr=strip.querySelector(".lr"), ld=strip.querySelector(".ld"), lw=strip.querySelector(".lw");
+  const lrv=strip.querySelector(".lrv"), ldv=strip.querySelector(".ldv");
+  m.sync=()=>{ lr.value=m.rate; lrv.textContent=m.rate.toFixed(2); ld.value=m.depth; ldv.textContent=Math.round(m.depth*100)+"%"; lw.value=m.wave; };
+  m.sync();
+  lr.addEventListener("input",()=>{ m.rate=parseFloat(lr.value); lrv.textContent=m.rate.toFixed(2); });
+  ld.addEventListener("input",()=>{ m.depth=parseFloat(ld.value); ldv.textContent=Math.round(m.depth*100)+"%"; });
+  lw.addEventListener("change",()=>{ m.wave=parseInt(lw.value); });
+  btn.addEventListener("click",()=>{ m.on=!m.on; btn.classList.toggle("on",m.on); strip.style.display=m.on?"":"none";
+    if(!m.on){ P[key]=m.base; m.el.value=m.base; m.v.textContent=m.fmt(m.base); }
+    if((key==="feed"||key==="kill") && $("morphBtn")) $("morphBtn").classList.toggle("on", MOD.feed.on); });
+}
+function setLfo(key,o){ const m=MOD[key]; if(!m) return;
+  if(o.on!==undefined) m.on=o.on; if(o.rate!==undefined) m.rate=o.rate;
+  if(o.depth!==undefined) m.depth=o.depth; if(o.wave!==undefined) m.wave=o.wave;
+  if(o.phase!==undefined) m.phase=o.phase;
+  if(m.btn) m.btn.classList.toggle("on",m.on);
+  if(m.strip) m.strip.style.display=m.on?"":"none";
+  if(!m.on){ P[key]=m.base; m.el.value=m.base; m.v.textContent=m.fmt(m.base); }
+  if(m.sync) m.sync(); }
 function updateModeUI(){ document.body.classList.toggle("ferro", P.mode===3); }
 
 bindRange("feed","feed",x=>x.toFixed(4));
@@ -837,7 +884,6 @@ bindRange("dt","dt",x=>x.toFixed(2));
 bindRange("iters","iters",x=>x|0);
 bindRange("thresh","thresh",x=>x.toFixed(2));
 bindRange("width","width",x=>x.toFixed(3));
-bindRange("mspeed","mspeed",x=>x.toFixed(2));
 bindRange("brush","brush",x=>x|0);
 bindRange("light","light",x=>x.toFixed(2));
 bindRange("relief","relief",x=>x.toFixed(2));
@@ -905,12 +951,12 @@ function enableTilt(){
 }
 $("tiltBtn").addEventListener("click",()=> tiltOn ? stopTilt() : enableTilt());
 $("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
-$("morph").addEventListener("click",e=>{ P.morph=!P.morph; e.target.classList.toggle("on",P.morph); });
+$("morphBtn").addEventListener("click",()=>applyMorph());
 $("lensBtn").addEventListener("click",e=>{ P.lens=!P.lens; e.target.classList.toggle("on",P.lens); });
 $("lensRoamBtn").addEventListener("click",e=>{ P.lensRoam=!P.lensRoam; e.target.classList.toggle("on",P.lensRoam); });
 $("colBtn").addEventListener("click",e=>{ P.colour=!P.colour; e.target.classList.toggle("on",P.colour); });
 $("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
-$("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEFAULTS.mode; refreshControls(); });
+$("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEFAULTS.mode; clearAllLfo(); refreshControls(); });
 $("toggle").addEventListener("click",()=>{ const c=document.body.classList.toggle("collapsed");
   $("toggle").textContent = c ? "Show" : "Hide"; });
 
@@ -960,8 +1006,7 @@ const HELP = {
   thresh:["Threshold","The cut-off that splits fluid from ground. Slide it to grow or shrink the fluid (fatter or thinner tubes)."],
   width:["Edge / width","In Outline and Soft modes: thickness of the line or softness of the edge."],
   invert:["Invert B/W","Swap black and white."],
-  morph:["Auto-morph","Slowly drifts Feed & Kill through the interesting region over time, so the pattern keeps morphing between regimes — like the source video. Toggle with M."],
-  mspeed:["Morph speed","How quickly Auto-morph wanders through parameter space."],
+  morphBtn:["Morph","One-tap preset: switches on phase-offset LFOs for Feed & Kill so the pattern keeps morphing between regimes. Tap again to clear. Key: M."],
   brush:["Brush size","Size of the dab painted when you drag on the canvas to seed new growth."],
   reset:["Reset to defaults","Restore every parameter to its starting value."],
   helpBtn:["Help","Toggle this help box. While it's on, hover any control to read what it does (key: ?)."],
@@ -1012,8 +1057,7 @@ $("seedRings").addEventListener("click",()=>seed("rings"));
 const pc=$("presets");
 PRESETS.forEach((pr,i)=>{ const b=document.createElement("button"); b.textContent=`${i+1} ${pr.name}`;
   b.addEventListener("click",()=>applyPreset(i)); pc.appendChild(b); });
-function applyPreset(i){ const pr=PRESETS[i]; P.feed=pr.feed; P.kill=pr.kill; P.morph=false;
-  $("morph").classList.remove("on"); syncInputs(); }
+function applyPreset(i){ const pr=PRESETS[i]; setBase("feed",pr.feed); setBase("kill",pr.kill); }
 
 /* ---------- recording ---------- */
 let rec=null, chunks=[];
@@ -1036,7 +1080,7 @@ addEventListener("keydown",e=>{
   if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT") return;
   const k=e.key.toLowerCase();
   if(k===" "){ e.preventDefault(); P.paused=!P.paused; }
-  else if(k==="m"){ $("morph").click(); }
+  else if(k==="m"){ applyMorph(); }
   else if(k==="r"){ $("record").click(); }
   else if(k==="c"){ $("clear").click(); }
   else if(k==="i"){ $("invert").click(); }
