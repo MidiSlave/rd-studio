@@ -1,6 +1,14 @@
-# Source reference & extracted frames (kept out of the repo)
+# Reference material from the original artist — NEVER commit any of it.
+# (The artwork belongs to @cosmodernism; we only study it locally.)
 cool art.mov
+research/
 frames/
+**/frames/
+**/frames2/
+*.png
+*.jpg
+*.jpeg
+*.gif
 
 # Generated recordings & renders
 *.webm

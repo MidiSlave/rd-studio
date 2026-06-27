@@ -5,6 +5,15 @@ morphing organic style of a Gray-Scott reaction-diffusion video.
 
 **Live demo:** https://midislave.github.io/rd-studio/
 
+## Credits & inspiration
+
+The ferrofluid look is an independent procedural homage to the macro ferrofluid
+artwork of **[@cosmodernism](https://www.cosmodernism.com)** — see
+[cosmodernism.com](https://www.cosmodernism.com). All rights to that artwork
+remain with the artist. Their videos and any frames from them are used only as
+local visual reference for this study and are **never** committed to this repo
+(see `.gitignore`).
+
 ## What the source video is
 
 `cool art.mov` is a **Gray-Scott reaction-diffusion** animation. One simulation, with its

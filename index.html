@@ -40,7 +40,15 @@
   #panel h1{ font-size:13px; letter-spacing:.06em; text-transform:uppercase; margin:0 0 2px; color:var(--accent); }
   #panel .sub{ color:var(--dim); font-size:11px; margin-bottom:12px; }
   .grp{ border-top:1px solid var(--line); padding:11px 0 4px; }
-  .grp h2{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:0 0 8px; }
+  .grp h2{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin:0 0 8px;
+    cursor:pointer; user-select:none; -webkit-user-select:none; display:flex; align-items:center; gap:7px; }
+  .grp h2:hover{ color:var(--txt); }
+  .grp h2::before{ content:""; width:0; height:0; flex:0 0 auto;
+    border-left:5px solid currentColor; border-top:4px solid transparent; border-bottom:4px solid transparent;
+    transform:rotate(90deg); transition:transform .15s ease; }
+  .grp.collapsed h2{ margin-bottom:0; }
+  .grp.collapsed h2::before{ transform:rotate(0deg); }
+  .grp.collapsed > *:not(h2){ display:none; }
   .row{ display:flex; align-items:center; gap:8px; margin-bottom:7px; min-width:0; }
   .row label{ flex:0 0 84px; color:var(--dim); }
   .row input[type=range]{ flex:1 1 auto; min-width:0; accent-color:#fff; height:18px; }
@@ -203,10 +211,12 @@
     <div class="btns" style="margin-top:8px"><button id="tiltBtn">Enable tilt</button></div>
     <div class="row"><label>Tilt flow</label><input id="tiltFlow" type="range" min="0" max="1.5" step="0.05"><span class="val" id="tiltFlow_v"></span></div>
     <div class="hint">On a phone, tilt to make the fluid flow and the highlights slosh like real liquid. Tap <b>Enable tilt</b> first (iOS asks permission). Works best in Ferrofluid mode.</div>
-    <div class="btns" style="margin-top:10px"><button id="lensBtn">Lens bubble</button></div>
+    <div class="btns" style="margin-top:10px"><button id="lensBtn">Lens bubble</button><button id="lensRoamBtn">Roam</button></div>
     <div class="row"><label>Lens size</label><input id="lensRadius" type="range" min="0.06" max="0.4" step="0.01"><span class="val" id="lensRadius_v"></span></div>
     <div class="row"><label>Lens warp</label><input id="lensStr" type="range" min="0.1" max="0.6" step="0.02"><span class="val" id="lensStr_v"></span></div>
-    <div class="hint">A glassy droplet roams the frame, magnifying the pattern beneath it like a fisheye lens — then fades away and returns. Works in every render mode.</div>
+    <div class="row"><label>Roam speed</label><input id="lensSpeed" type="range" min="0" max="2" step="0.05"><span class="val" id="lensSpeed_v"></span></div>
+    <div class="row"><label>Roam range</label><input id="lensRange" type="range" min="0" max="0.45" step="0.01"><span class="val" id="lensRange_v"></span></div>
+    <div class="hint">A glassy droplet magnifies the pattern beneath it like a fisheye lens. <b>Drag it</b> on the canvas to move it by hand, or turn on <b>Roam</b> to let it wander (set its speed &amp; range). Works in every render mode.</div>
   </div>
 
   <div class="grp">
@@ -288,8 +298,9 @@ const P = {
   palette:0, light:2.4, relief:2.4, gloss:26, spec:0.95, rim:0.55, vignette:0.45,
   // glossy beads (reflection), backlit glow/bloom, slow hue drift
   glow:0.7, env:0.6, hue:0, hueDrift:0.12,
-  // fisheye lens bubble
+  // fisheye lens bubble — manual/stationary by default; optional roaming
   lens:false, lensStr:0.35, lensRadius:0.18,
+  lensRoam:false, lensSpeed:0.5, lensRange:0.28, lensX:0.5, lensY:0.5,
   // spatial regime field — one scalar drifts F & k together along the live band.
   // tuned to span fine maze -> coarse beads -> thick worms in one frame (macro-ferro
   // reference); the kill co-variation keeps every region inside the live band.
@@ -468,14 +479,13 @@ void main(){
     ink = mix(ink, 1.0-ink, u_invert);
     col = vec3(1.0-ink);  // ink=1 -> black on white
   }
-  /* glassy lens rim + glint so the bubble reads as a droplet (all modes) */
+  /* soft wet glint inside the bubble — no perimeter shadow; fades with strength */
   if(u_lensStr>0.0){
+    float ls = clamp(u_lensStr*3.0, 0.0, 1.0);
     float r = lensMask(v_uv);
-    float rim = smoothstep(0.82,0.97,r)*(1.0-smoothstep(0.97,1.05,r));
-    col *= 1.0 - 0.35*rim;                                  // refractive rim
     vec2 gp = u_lensC + vec2(-0.28,0.30)*u_lensR;           // glint upper-left
     float gd = length(vec2((v_uv.x-gp.x)*aspect(), v_uv.y-gp.y))/u_lensR;
-    if(u_mode==3) col += vec3(1.0)*smoothstep(0.16,0.0,gd)*0.5*step(r,1.0);
+    if(u_mode==3) col += vec3(1.0)*smoothstep(0.16,0.0,gd)*0.45*ls*step(r,1.0);
   }
   o = vec4(clamp(col,0.0,1.0), 1.0);
 }`;
@@ -616,9 +626,15 @@ const RU = {
 let brush={x:-1,y:-1,down:false};
 function evToUv(e){ const r=canvas.getBoundingClientRect();
   const x=(e.clientX-r.left)/r.width, y=1.0-(e.clientY-r.top)/r.height; return {x,y}; }
-canvas.addEventListener("pointerdown",e=>{ brush.down=true; const u=evToUv(e); brush.x=u.x; brush.y=u.y; canvas.setPointerCapture(e.pointerId); });
-canvas.addEventListener("pointermove",e=>{ if(!brush.down)return; const u=evToUv(e); brush.x=u.x; brush.y=u.y; });
-canvas.addEventListener("pointerup",e=>{ brush.down=false; brush.x=-1; });
+function lensHit(x,y){ const dx=(x-lensCx)*ASPECT, dy=(y-lensCy); return Math.hypot(dx,dy) < P.lensRadius; }
+canvas.addEventListener("pointerdown",e=>{ const u=evToUv(e);
+  // grab the bubble to drag it; otherwise seed/paint as usual
+  if(P.lens && lensStrCur>0.01 && lensHit(u.x,u.y)){ lensDrag=true; P.lensX=u.x; P.lensY=u.y; canvas.setPointerCapture(e.pointerId); return; }
+  brush.down=true; brush.x=u.x; brush.y=u.y; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove",e=>{ const u=evToUv(e);
+  if(lensDrag){ P.lensX=u.x; P.lensY=u.y; return; }
+  if(!brush.down)return; brush.x=u.x; brush.y=u.y; });
+canvas.addEventListener("pointerup",e=>{ if(lensDrag){ lensDrag=false; return; } brush.down=false; brush.x=-1; });
 
 /* ---------- simulation step ---------- */
 function step(){
@@ -711,19 +727,20 @@ function maybeRescue(dtSec){
   if(sum/(SIM_W*SIM_H) < 0.004) seed("spots");           // collapsed -> reseed
 }
 
-/* ---------- hue drift + roaming fisheye lens ---------- */
-let lensCx=0.5, lensCy=0.5, lensStrCur=0, lensT=0;
-function smooth01(x,a,b){ x=Math.max(0,Math.min(1,(x-a)/(b-a))); return x*x*(3-2*x); }
+/* ---------- hue drift + fisheye lens (manual by default, optional roam) ---------- */
+let lensCx=0.5, lensCy=0.5, lensStrCur=0, lensT=0, lensDrag=false;
 function animateLook(dt){
   // slow hue drift (warm palette eases through orange -> red -> ... like the reference)
   P.hue = (P.hue + dt*P.hueDrift*0.25) % 6.2831853;
-  // lens roams on a slow Lissajous path and "appears for a time" then fades away
-  lensT += dt;
-  lensCx = 0.5 + 0.30*Math.sin(lensT*0.21);
-  lensCy = 0.5 + 0.34*Math.sin(lensT*0.16+1.1);
-  let target=0;
-  if(P.lens){ const ph=(lensT*0.045)%1.0; target = P.lensStr*smooth01(ph,0.0,0.18)*(1.0-smooth01(ph,0.72,0.96)); }
-  lensStrCur += (target-lensStrCur)*0.06;
+  // position: sit at the manual point, unless Roam is on (and not being dragged)
+  if(P.lensRoam && !lensDrag){
+    lensT += dt*P.lensSpeed;
+    lensCx = Math.min(0.98,Math.max(0.02, P.lensX + P.lensRange*Math.sin(lensT*0.7)));
+    lensCy = Math.min(0.98,Math.max(0.02, P.lensY + P.lensRange*1.13*Math.sin(lensT*0.53+1.1)));
+  } else { lensCx=P.lensX; lensCy=P.lensY; }
+  const target = P.lens ? P.lensStr : 0;
+  lensStrCur += (target-lensStrCur)*0.08;
+  if(target===0 && lensStrCur<0.004) lensStrCur=0;   // clear fully so nothing lingers when off
 }
 
 /* ---------- main loop ---------- */
@@ -758,6 +775,7 @@ function refreshControls(){ RANGES.forEach(f=>f());
   $("invert").classList.toggle("on",!!P.invert);
   $("morph").classList.toggle("on",P.morph);
   $("lensBtn").classList.toggle("on",P.lens);
+  $("lensRoamBtn").classList.toggle("on",P.lensRoam);
   setPaintMode(P.paintMode, P.dsign);
   updateModeUI(); }
 function syncInputs(){ $("feed").value=P.feed; $("feed_v").textContent=P.feed.toFixed(4);
@@ -791,6 +809,8 @@ bindRange("glow","glow",x=>x.toFixed(2));
 bindRange("hueDrift","hueDrift",x=>x.toFixed(2));
 bindRange("lensRadius","lensRadius",x=>x.toFixed(2));
 bindRange("lensStr","lensStr",x=>x.toFixed(2));
+bindRange("lensSpeed","lensSpeed",x=>x.toFixed(2));
+bindRange("lensRange","lensRange",x=>x.toFixed(2));
 
 /* palette dropdown */
 PALETTES.forEach((p,i)=>{ const o=document.createElement("option"); o.value=String(i); o.textContent=p.name; $("palette").appendChild(o); });
@@ -835,6 +855,7 @@ $("tiltBtn").addEventListener("click",()=> tiltOn ? stopTilt() : enableTilt());
 $("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
 $("morph").addEventListener("click",e=>{ P.morph=!P.morph; e.target.classList.toggle("on",P.morph); });
 $("lensBtn").addEventListener("click",e=>{ P.lens=!P.lens; e.target.classList.toggle("on",P.lens); });
+$("lensRoamBtn").addEventListener("click",e=>{ P.lensRoam=!P.lensRoam; e.target.classList.toggle("on",P.lensRoam); });
 $("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
 $("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEFAULTS.mode; refreshControls(); });
 $("toggle").addEventListener("click",()=>{ const c=document.body.classList.toggle("collapsed");
@@ -859,9 +880,12 @@ const HELP = {
   env:["Reflection","Strength of the wet studio reflection on the glossy beads — the key to the liquid-metal sheen seen in the reference."],
   glow:["Glow / bloom","Warm light blooming around the bright fluid, for the backlit macro-photo luminosity."],
   hueDrift:["Hue drift","How fast the palette slowly eases through hues over time. 0 holds a fixed colour."],
-  lensBtn:["Lens bubble","A glassy droplet that roams the frame and magnifies the pattern beneath it like a fisheye lens, then fades and returns. Works in every render mode."],
+  lensBtn:["Lens bubble","A glassy droplet that magnifies the pattern beneath it like a fisheye lens. Stationary by default — drag it on the canvas to move it. Works in every render mode."],
+  lensRoamBtn:["Roam","Let the lens wander on its own instead of sitting still. Set how fast and how far with Roam speed & range."],
   lensRadius:["Lens size","How big the magnifying droplet is."],
   lensStr:["Lens warp","How strongly the droplet bulges and magnifies the pattern beneath it."],
+  lensSpeed:["Roam speed","How fast the lens drifts when Roam is on. 0 holds it still."],
+  lensRange:["Roam range","How far the lens wanders from its current spot when Roam is on."],
   field:["Field amount","How strongly the regime varies across the frame. 0 = one uniform pattern; higher = thick worms in one area, fine spots and bubbly holes in another."],
   fldGrad:["Gradient","A smooth ramp of density across the frame, so the pattern thickens toward one side."],
   fldAngle:["Gradient angle","Direction of that density ramp."],
@@ -967,6 +991,10 @@ addEventListener("keydown",e=>{
 if(MOBILE){ document.body.classList.add("collapsed"); $("toggle").textContent="Show"; }
 refreshControls();
 updateModeUI();
+/* collapsible param sections — tap a section heading to fold it away */
+document.querySelectorAll("#panel .grp > h2").forEach(h=>{
+  h.addEventListener("click",()=> h.parentElement.classList.toggle("collapsed"));
+});
 seed("spots");
 applyPreset(0);
 requestAnimationFrame(loop);
