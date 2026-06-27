@@ -1,0 +1,50 @@
+name: Deploy demo to GitHub Pages
+
+# Rebuilds the live demo (https://midislave.github.io/rd-studio/) automatically
+# whenever the site changes on the default branch. The app is a single static
+# index.html, so there is nothing to compile — the job just publishes the repo
+# contents as the Pages artifact.
+
+on:
+  push:
+    branches: [main]
+    # Only redeploy when something user-facing actually changes.
+    paths:
+      - 'index.html'
+      - 'assemble.sh'
+      - 'README.md'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch: {}   # allow manual "Run workflow" from the Actions tab
+
+# Permissions the deploy-pages action needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once; let an in-flight one finish, queue the latest.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

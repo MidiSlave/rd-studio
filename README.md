@@ -50,6 +50,19 @@ controls as usual, drag on the canvas to seed, and turn on **? Help** then tap a
 control to read what it does. To save GPU on phones the simulation runs at a
 lighter resolution — `assemble.sh` still rescales any recording back to 1260×1746.
 
+## Deploying the demo
+
+The live demo redeploys itself automatically. A GitHub Actions workflow
+(`.github/workflows/deploy-pages.yml`) publishes the site to GitHub Pages on
+every push to `main` that touches `index.html` (or the README / assemble
+script), so the demo always tracks the default branch — just merge your changes
+and the page rebuilds. You can also trigger it by hand from the repo's **Actions
+→ Deploy demo to GitHub Pages → Run workflow**.
+
+**One-time setup:** in the repo go to **Settings → Pages → Build and deployment**
+and set **Source** to **GitHub Actions**. (If Pages was previously serving from a
+branch, switching to GitHub Actions hands deployment over to the workflow.)
+
 ## Make a finished video
 
 After recording (`recording.webm` lands in this folder):
