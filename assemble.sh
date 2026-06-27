@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Turn a recorded recording.webm into a finished video matching the source "cool art.mov".
+# Turn a recorded recording.webm into a finished 1260x1746 portrait video at 60fps.
 # Usage:
 #   ./assemble.sh [input.webm] [output basename]
 # Produces both an H.264 .mp4 (universal) and a ProRes .mov (editing-grade).
@@ -12,11 +12,11 @@ H=1746
 FPS=60
 
 if [ ! -f "$IN" ]; then
-  echo "No input file '$IN'. Record one in rd.html first (the Record button)."
+  echo "No input file '$IN'. Record one in index.html first (the Record button)."
   exit 1
 fi
 
-# Scale/letterbox to the exact source canvas, force constant 60fps, lock to greyscale (true B&W).
+# Scale/letterbox to the exact 1260x1746 portrait canvas, force constant 60fps, lock to greyscale.
 VF="scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=white,format=gray,format=yuv420p,fps=${FPS}"
 
 echo "→ ${OUT}.mp4 (H.264)"
