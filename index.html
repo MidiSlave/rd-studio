@@ -57,6 +57,8 @@
   #status{ position:fixed; left:10px; bottom:8px; color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
   #err{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:40px;
     background:#0c0d10; color:#ff7a6b; text-align:center; font-size:14px; }
+  #ferroGrp{ display:none; }
+  body.ferro #ferroGrp{ display:block; }
 
   /* ============================ mobile / touch ============================ */
   /* Portrait phones: canvas fills the screen, the panel becomes a bottom sheet
@@ -123,7 +125,7 @@
 
 <div id="panel">
   <h1>Reaction-Diffusion Studio</h1>
-  <div class="sub">Gray-Scott · black &amp; white</div>
+  <div class="sub">Gray-Scott · ferrofluid &amp; B/W</div>
   <div class="btns" style="margin-bottom:10px"><button id="reset">Reset to defaults</button><button id="helpBtn" title="Explain each control on hover (?)">? Help</button></div>
 
   <div class="grp">
@@ -142,9 +144,10 @@
   </div>
 
   <div class="grp">
-    <h2>Look (black &amp; white)</h2>
+    <h2>Look</h2>
     <div class="row"><label>Render</label>
       <select id="mode">
+        <option value="3">Ferrofluid (glossy colour)</option>
         <option value="0">Filled (solid blobs)</option>
         <option value="2">Outline (line art)</option>
         <option value="1">Soft (anti-aliased)</option>
@@ -155,6 +158,34 @@
     <div class="btns">
       <button id="invert">Invert B/W</button>
     </div>
+  </div>
+
+  <div class="grp" id="ferroGrp">
+    <h2>Ferrofluid material</h2>
+    <div class="row"><label>Palette</label><select id="palette"></select></div>
+    <div class="row"><label>Light angle</label><input id="light" type="range" min="0" max="6.28" step="0.02"><span class="val" id="light_v"></span></div>
+    <div class="row"><label>Relief</label><input id="relief" type="range" min="0.4" max="6" step="0.05"><span class="val" id="relief_v"></span></div>
+    <div class="row"><label>Gloss</label><input id="gloss" type="range" min="4" max="80" step="1"><span class="val" id="gloss_v"></span></div>
+    <div class="row"><label>Specular</label><input id="spec" type="range" min="0" max="2" step="0.02"><span class="val" id="spec_v"></span></div>
+    <div class="row"><label>Rim light</label><input id="rim" type="range" min="0" max="1.5" step="0.02"><span class="val" id="rim_v"></span></div>
+    <div class="row"><label>Vignette</label><input id="vignette" type="range" min="0" max="1" step="0.02"><span class="val" id="vignette_v"></span></div>
+    <div class="hint">Lights the pattern as a glossy raised liquid. Threshold &amp; Edge/width above set how fat the fluid tubes are.</div>
+  </div>
+
+  <div class="grp">
+    <h2>Regime field (density)</h2>
+    <div class="row"><label>Field amount</label><input id="field" type="range" min="0" max="1.5" step="0.01"><span class="val" id="field_v"></span></div>
+    <div class="row"><label>Gradient</label><input id="fldGrad" type="range" min="0" max="0.03" step="0.0005"><span class="val" id="fldGrad_v"></span></div>
+    <div class="row"><label>Grad angle</label><input id="fldAngle" type="range" min="0" max="6.28" step="0.02"><span class="val" id="fldAngle_v"></span></div>
+    <div class="row"><label>Noise</label><input id="fldNoise" type="range" min="0" max="0.03" step="0.0005"><span class="val" id="fldNoise_v"></span></div>
+    <div class="row"><label>Noise scale</label><input id="fldScale" type="range" min="0.5" max="8" step="0.1"><span class="val" id="fldScale_v"></span></div>
+    <div class="btns">
+      <button id="paintSeed" class="on">Draw seed</button>
+      <button id="paintDense">Paint denser</button>
+      <button id="paintFine">Paint finer</button>
+      <button id="resetDensity">Reset density</button>
+    </div>
+    <div class="hint">Makes different areas sit in different regimes (thick worms, fine spots, bubbly holes) in one frame. Pick a paint mode, then drag on the canvas.</div>
   </div>
 
   <div class="grp">
@@ -225,12 +256,28 @@ const PRESETS = [
   { name:"Solitons",   feed:0.0250, kill:0.0600 },
 ];
 
+/* ---------- ferrofluid palettes (warm grounds + near-black fluid) ---------- */
+/* colours are linear-ish RGB 0..1: fluid (the dark liquid), bgA/bgB (ground
+   gradient top→bottom), spec (wet highlight), rim (edge light). */
+const PALETTES = [
+  { name:"Amber",         fluid:[0.045,0.030,0.020], bgA:[0.97,0.64,0.14], bgB:[0.80,0.33,0.05], spec:[1.00,0.96,0.86], rim:[1.00,0.74,0.36] },
+  { name:"Blood orange",  fluid:[0.035,0.020,0.018], bgA:[0.92,0.38,0.10], bgB:[0.46,0.10,0.04], spec:[1.00,0.88,0.68], rim:[1.00,0.56,0.26] },
+  { name:"Red / black",   fluid:[0.030,0.012,0.012], bgA:[0.88,0.24,0.10], bgB:[0.32,0.05,0.03], spec:[1.00,0.86,0.80], rim:[1.00,0.44,0.32] },
+  { name:"Cobalt + amber",fluid:[0.020,0.022,0.045], bgA:[0.09,0.20,0.82], bgB:[0.94,0.62,0.14], spec:[0.92,0.96,1.00], rim:[0.62,0.82,1.00] },
+];
+
 /* ---------- state ---------- */
 const P = {
   feed:0.0545, kill:0.0620, dA:1.0, dB:0.5, dt:1.0, iters:14,
-  mode:0, thresh:0.20, width:0.04, invert:0,
+  mode:3, thresh:0.18, width:0.06, invert:0,
   morph:false, mspeed:0.5, brush:24,
   paused:false,
+  // ferrofluid look (mode 3)
+  palette:0, light:2.4, relief:2.4, gloss:26, spec:0.95, rim:0.55, vignette:0.45,
+  // spatial regime field — one scalar drifts F & k together along the live band
+  field:0.85, fldGrad:0.013, fldAngle:1.3, fldNoise:0.012, fldScale:3.0,
+  // painting: 0 = seed B, 1 = paint density. dsign = +denser / -finer
+  paintMode:0, dsign:1,
 };
 const DEFAULTS = Object.freeze({ ...P });
 
@@ -250,11 +297,21 @@ void main(){ v_uv = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }`;
 const SIM_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_state;
+uniform sampler2D u_param;          // .r = painted density offset (-1..1)
 uniform vec2 u_texel;
 uniform float u_dA,u_dB,u_feed,u_kill,u_dt;
 uniform vec2 u_brush; uniform float u_brushR,u_brushAmt;
+uniform float u_field,u_fGrad,u_fAngle,u_fNoise,u_fScale;  // spatial regime field
 in vec2 v_uv; out vec4 o;
 vec2 s(vec2 uv){ return texture(u_state, uv).rg; }
+
+/* cheap value-noise fbm so different regions land in different regimes */
+float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+34.45); return fract(p.x*p.y); }
+float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  float a=hash(i), b=hash(i+vec2(1,0)), c=hash(i+vec2(0,1)), d=hash(i+vec2(1,1));
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y); }
+float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
+
 void main(){
   vec2 uv=v_uv; vec2 c=s(uv);
   vec2 lap = c*-1.0
@@ -262,9 +319,24 @@ void main(){
       +s(uv+vec2(0., u_texel.y))+s(uv+vec2(0.,-u_texel.y)))*0.2
     + (s(uv+vec2( u_texel.x, u_texel.y))+s(uv+vec2(-u_texel.x, u_texel.y))
       +s(uv+vec2( u_texel.x,-u_texel.y))+s(uv+vec2(-u_texel.x,-u_texel.y)))*0.05;
+
+  /* spatial regime field: a single scalar shifts feed & kill together along the
+     viable band, so each region sits in its own regime (thick / fine / holes)
+     yet never drifts out of the live zone into extinction. */
+  float feed=u_feed, kill=u_kill;
+  if(u_field>0.0){
+    vec2 dir=vec2(cos(u_fAngle), sin(u_fAngle));
+    float g=dot(uv-0.5, dir);                  // smooth ramp across the frame
+    float n=fbm(uv*u_fScale)-0.5;              // organic patches
+    float painted=texture(u_param,uv).r;       // user-painted bias
+    float ss=(g*u_fGrad + n*u_fNoise + painted*0.022)*u_field;
+    feed=clamp(feed+ss,       0.012, 0.090);
+    kill=clamp(kill+ss*0.28,  0.040, 0.072);
+  }
+
   float A=c.r,B=c.g; float rab=A*B*B;
-  A += (u_dA*lap.r - rab + u_feed*(1.0-A))*u_dt;
-  B += (u_dB*lap.g + rab - (u_kill+u_feed)*B)*u_dt;
+  A += (u_dA*lap.r - rab + feed*(1.0-A))*u_dt;
+  B += (u_dB*lap.g + rab - (kill+feed)*B)*u_dt;
   if(u_brush.x>=0.0 && distance(uv,u_brush) < u_brushR){ B += u_brushAmt; A -= u_brushAmt*0.5; }
   o = vec4(clamp(A,0.,1.), clamp(B,0.,1.), 0., 1.);
 }`;
@@ -273,6 +345,8 @@ const RENDER_FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_state; uniform vec2 u_size;
 uniform int u_mode; uniform float u_thresh,u_width,u_invert;
+uniform vec3 u_fluid,u_bgA,u_bgB,u_specCol,u_rimCol;     // ferrofluid palette
+uniform float u_light,u_relief,u_gloss,u_spec,u_rim,u_vig;
 in vec2 v_uv; out vec4 o;
 float sampB(vec2 uv){
   // manual bilinear so it stays smooth without float-linear filtering
@@ -282,7 +356,36 @@ float sampB(vec2 uv){
   float cc=texture(u_state,t+dy).g, d=texture(u_state,t+dx+dy).g;
   return mix(mix(a,b,f.x), mix(cc,d,f.x), f.y);
 }
+/* smoothed 0..1 height of the fluid film (rounded shoulders -> domed tubes) */
+float Hf(vec2 uv){ return smoothstep(u_thresh-u_width, u_thresh+u_width, sampB(uv)); }
+
 void main(){
+  if(u_mode==3){
+    /* ---- glossy ferrofluid: light the field as a raised liquid film ---- */
+    vec2 px = 1.0/u_size;
+    float h  = Hf(v_uv);
+    float hl = Hf(v_uv-vec2(px.x,0.0)), hr = Hf(v_uv+vec2(px.x,0.0));
+    float hd = Hf(v_uv-vec2(0.0,px.y)), hu = Hf(v_uv+vec2(0.0,px.y));
+    vec3 N = normalize(vec3((hl-hr)*u_relief, (hd-hu)*u_relief, 1.0));
+    vec3 L = normalize(vec3(cos(u_light), sin(u_light), 0.65));
+    vec3 V = vec3(0.0,0.0,1.0);
+    vec3 H = normalize(L+V);
+    float diff = clamp(dot(N,L),0.0,1.0);
+    float spc  = pow(max(dot(N,H),0.0), u_gloss) * u_spec;
+    float fres = pow(1.0-clamp(N.z,0.0,1.0), 3.0);           // rim on steep edges
+    float gm   = clamp(length(vec2(hr-hl,hu-hd))*u_relief*0.6, 0.0, 1.0); // contact groove
+
+    vec3 bg = mix(u_bgA, u_bgB, clamp(v_uv.y*1.15-0.07, 0.0, 1.0));
+    vec3 col = mix(bg, u_fluid, h);                          // fluid sits on the ground
+    col *= mix(1.0, 0.30+0.70*diff, h);                     // shade the fluid, keep ground backlit
+    col *= 1.0 - 0.55*gm;                                   // dark contact line / groove
+    col += u_specCol * spc * (0.35+0.65*h);                 // wet specular highlights
+    col += u_rimCol  * fres * u_rim * h;                    // rim light on bead edges
+    float r = length(v_uv-0.5)*1.42;
+    col *= 1.0 - u_vig*smoothstep(0.45,1.05,r);             // vignette
+    o = vec4(clamp(col,0.0,1.0), 1.0);
+    return;
+  }
   float B = sampB(v_uv);
   float ink;
   if(u_mode==0){ ink = step(u_thresh, B); }
@@ -363,18 +466,61 @@ void main(){ o = texture(u_state, v_uv); }`;
 const renderProgCopy = prog(VS, COPY_FS);
 const copy_state = gl.getUniformLocation(renderProgCopy,"u_state");
 
+/* ---------- density paint buffer (regime field the user can paint) ---------- */
+const PAINT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_src; uniform vec2 u_brush; uniform float u_brushR,u_amt;
+in vec2 v_uv; out vec4 o;
+void main(){
+  float v = texture(u_src, v_uv).r;
+  float d = distance(v_uv, u_brush);
+  float fall = exp(-(d*d)/(u_brushR*u_brushR*0.5));
+  o = vec4(clamp(v + u_amt*fall, -1.0, 1.0), 0.0, 0.0, 1.0);
+}`;
+const paintProg = prog(VS, PAINT_FS);
+const PU = { src:gl.getUniformLocation(paintProg,"u_src"), brush:gl.getUniformLocation(paintProg,"u_brush"),
+  brushR:gl.getUniformLocation(paintProg,"u_brushR"), amt:gl.getUniformLocation(paintProg,"u_amt") };
+let paintCur, paintAlt, paintFboCur, paintFboAlt;
+function allocPaint(){ paintCur=makeTex(); paintAlt=makeTex(); paintFboCur=makeFbo(paintCur); paintFboAlt=makeFbo(paintAlt); paintClear(); }
+function paintClear(){ const z=new Float32Array(SIM_W*SIM_H*4);
+  gl.bindTexture(gl.TEXTURE_2D,paintCur); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,SIM_W,SIM_H,0,gl.RGBA,gl.FLOAT,z);
+  gl.bindTexture(gl.TEXTURE_2D,paintAlt); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,SIM_W,SIM_H,0,gl.RGBA,gl.FLOAT,z); }
+allocPaint();
+function paintDab(){
+  if(brush.x<0.0) return;
+  gl.useProgram(paintProg); gl.bindVertexArray(vao); gl.viewport(0,0,SIM_W,SIM_H);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,paintFboAlt);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,paintCur); gl.uniform1i(PU.src,0);
+  gl.uniform2f(PU.brush,brush.x,brush.y);
+  gl.uniform1f(PU.brushR, Math.max(0.01, P.brush/Math.min(SIM_W,SIM_H)));
+  gl.uniform1f(PU.amt, 0.05*P.dsign);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  let t=paintCur; paintCur=paintAlt; paintAlt=t;
+  let f=paintFboCur; paintFboCur=paintFboAlt; paintFboAlt=f;
+}
+
 /* ---------- uniforms ---------- */
 const U = {
-  state:gl.getUniformLocation(simProg,"u_state"), texel:gl.getUniformLocation(simProg,"u_texel"),
+  state:gl.getUniformLocation(simProg,"u_state"), param:gl.getUniformLocation(simProg,"u_param"),
+  texel:gl.getUniformLocation(simProg,"u_texel"),
   dA:gl.getUniformLocation(simProg,"u_dA"), dB:gl.getUniformLocation(simProg,"u_dB"),
   feed:gl.getUniformLocation(simProg,"u_feed"), kill:gl.getUniformLocation(simProg,"u_kill"),
   dt:gl.getUniformLocation(simProg,"u_dt"), brush:gl.getUniformLocation(simProg,"u_brush"),
   brushR:gl.getUniformLocation(simProg,"u_brushR"), brushAmt:gl.getUniformLocation(simProg,"u_brushAmt"),
+  field:gl.getUniformLocation(simProg,"u_field"), fGrad:gl.getUniformLocation(simProg,"u_fGrad"),
+  fAngle:gl.getUniformLocation(simProg,"u_fAngle"), fNoise:gl.getUniformLocation(simProg,"u_fNoise"),
+  fScale:gl.getUniformLocation(simProg,"u_fScale"),
 };
 const RU = {
   state:gl.getUniformLocation(renderProg,"u_state"), size:gl.getUniformLocation(renderProg,"u_size"),
   mode:gl.getUniformLocation(renderProg,"u_mode"), thresh:gl.getUniformLocation(renderProg,"u_thresh"),
   width:gl.getUniformLocation(renderProg,"u_width"), invert:gl.getUniformLocation(renderProg,"u_invert"),
+  fluid:gl.getUniformLocation(renderProg,"u_fluid"), bgA:gl.getUniformLocation(renderProg,"u_bgA"),
+  bgB:gl.getUniformLocation(renderProg,"u_bgB"), specCol:gl.getUniformLocation(renderProg,"u_specCol"),
+  rimCol:gl.getUniformLocation(renderProg,"u_rimCol"), light:gl.getUniformLocation(renderProg,"u_light"),
+  relief:gl.getUniformLocation(renderProg,"u_relief"), gloss:gl.getUniformLocation(renderProg,"u_gloss"),
+  spec:gl.getUniformLocation(renderProg,"u_spec"), rim:gl.getUniformLocation(renderProg,"u_rim"),
+  vig:gl.getUniformLocation(renderProg,"u_vig"),
 };
 
 /* ---------- brush input ---------- */
@@ -394,14 +540,17 @@ function step(){
   gl.uniform1f(U.feed,P.feed); gl.uniform1f(U.kill,P.kill); gl.uniform1f(U.dt,P.dt);
   gl.uniform1f(U.brushR, P.brush/Math.min(SIM_W,SIM_H));
   gl.uniform1f(U.brushAmt, 0.9);
+  gl.uniform1f(U.field,P.field); gl.uniform1f(U.fGrad,P.fldGrad); gl.uniform1f(U.fAngle,P.fldAngle);
+  gl.uniform1f(U.fNoise,P.fldNoise); gl.uniform1f(U.fScale,P.fldScale);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,paintCur); gl.uniform1i(U.param,1);
   const n=P.iters|0;
   for(let i=0;i<n;i++){
     const readT = (i%2===0)?texA:texB;
     const writeF = (i%2===0)?fboB:fboA;
     gl.bindFramebuffer(gl.FRAMEBUFFER,writeF);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,readT); gl.uniform1i(U.state,0);
-    // brush only active on first sub-step to avoid over-painting
-    if(brush.down && i===0) gl.uniform2f(U.brush,brush.x,brush.y); else gl.uniform2f(U.brush,-1,-1);
+    // seed brush only on first sub-step, and only when not painting density
+    if(brush.down && i===0 && P.paintMode===0) gl.uniform2f(U.brush,brush.x,brush.y); else gl.uniform2f(U.brush,-1,-1);
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
   // ensure texA holds latest result
@@ -416,6 +565,13 @@ function draw(){
   gl.uniform2f(RU.size,SIM_W,SIM_H);
   gl.uniform1i(RU.mode,P.mode); gl.uniform1f(RU.thresh,P.thresh);
   gl.uniform1f(RU.width,P.width); gl.uniform1f(RU.invert,P.invert);
+  if(P.mode===3){
+    const pal=PALETTES[P.palette]||PALETTES[0];
+    gl.uniform3fv(RU.fluid,pal.fluid); gl.uniform3fv(RU.bgA,pal.bgA); gl.uniform3fv(RU.bgB,pal.bgB);
+    gl.uniform3fv(RU.specCol,pal.spec); gl.uniform3fv(RU.rimCol,pal.rim);
+    gl.uniform1f(RU.light,P.light); gl.uniform1f(RU.relief,P.relief); gl.uniform1f(RU.gloss,P.gloss);
+    gl.uniform1f(RU.spec,P.spec); gl.uniform1f(RU.rim,P.rim); gl.uniform1f(RU.vig,P.vignette);
+  }
   gl.drawArrays(gl.TRIANGLES,0,3);
 }
 
@@ -468,6 +624,7 @@ function loop(now){
     step();
     maybeRescue(dt);
   }
+  if(brush.down && P.paintMode===1) paintDab();   // paint the density field
   draw();
   frames++; fpsT+=dt; if(fpsT>=0.5){ fps=Math.round(frames/fpsT); frames=0; fpsT=0; }
   document.getElementById("status").textContent =
@@ -485,10 +642,14 @@ function bindRange(id,key,fmt){ const el=$(id), v=$(id+"_v");
   RANGES.push(set); }
 function refreshControls(){ RANGES.forEach(f=>f());
   $("mode").value=String(P.mode);
+  $("palette").value=String(P.palette);
   $("invert").classList.toggle("on",!!P.invert);
-  $("morph").classList.toggle("on",P.morph); }
+  $("morph").classList.toggle("on",P.morph);
+  setPaintMode(P.paintMode, P.dsign);
+  updateModeUI(); }
 function syncInputs(){ $("feed").value=P.feed; $("feed_v").textContent=P.feed.toFixed(4);
   $("kill").value=P.kill; $("kill_v").textContent=P.kill.toFixed(4); }
+function updateModeUI(){ document.body.classList.toggle("ferro", P.mode===3); }
 
 bindRange("feed","feed",x=>x.toFixed(4));
 bindRange("kill","kill",x=>x.toFixed(4));
@@ -500,8 +661,34 @@ bindRange("thresh","thresh",x=>x.toFixed(2));
 bindRange("width","width",x=>x.toFixed(3));
 bindRange("mspeed","mspeed",x=>x.toFixed(2));
 bindRange("brush","brush",x=>x|0);
+bindRange("light","light",x=>x.toFixed(2));
+bindRange("relief","relief",x=>x.toFixed(2));
+bindRange("gloss","gloss",x=>x|0);
+bindRange("spec","spec",x=>x.toFixed(2));
+bindRange("rim","rim",x=>x.toFixed(2));
+bindRange("vignette","vignette",x=>x.toFixed(2));
+bindRange("field","field",x=>x.toFixed(2));
+bindRange("fldGrad","fldGrad",x=>x.toFixed(4));
+bindRange("fldAngle","fldAngle",x=>x.toFixed(2));
+bindRange("fldNoise","fldNoise",x=>x.toFixed(4));
+bindRange("fldScale","fldScale",x=>x.toFixed(1));
 
-$("mode").addEventListener("change",e=>{ P.mode=parseInt(e.target.value); });
+/* palette dropdown */
+PALETTES.forEach((p,i)=>{ const o=document.createElement("option"); o.value=String(i); o.textContent=p.name; $("palette").appendChild(o); });
+$("palette").value=String(P.palette);
+$("palette").addEventListener("change",e=>{ P.palette=parseInt(e.target.value); });
+
+/* paint mode buttons */
+function setPaintMode(mode,sign){ P.paintMode=mode; if(sign!==undefined) P.dsign=sign;
+  $("paintSeed").classList.toggle("on", mode===0);
+  $("paintDense").classList.toggle("on", mode===1 && P.dsign>0);
+  $("paintFine").classList.toggle("on", mode===1 && P.dsign<0); }
+$("paintSeed").addEventListener("click",()=>setPaintMode(0));
+$("paintDense").addEventListener("click",()=>setPaintMode(1,1));
+$("paintFine").addEventListener("click",()=>setPaintMode(1,-1));
+$("resetDensity").addEventListener("click",()=>paintClear());
+
+$("mode").addEventListener("change",e=>{ P.mode=parseInt(e.target.value); updateModeUI(); });
 $("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
 $("morph").addEventListener("click",e=>{ P.morph=!P.morph; e.target.classList.toggle("on",P.morph); });
 $("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
@@ -517,8 +704,24 @@ const HELP = {
   dB:["Diffuse B","How fast chemical B spreads — usually about half of Diffuse A. Changing the A:B ratio alters feature size and edge sharpness."],
   dt:["Time step","Size of each simulation step. Larger evolves faster but can go unstable and noisy; smaller is slower but rock-steady."],
   iters:["Speed","Simulation steps computed per displayed frame. Higher makes the pattern evolve faster on screen (at more GPU cost per frame)."],
-  mode:["Render mode","How the field is drawn in black & white: Filled solid blobs, thin Outline line-art, or Soft anti-aliased edges."],
-  thresh:["Threshold","The cut-off that splits black from white. Slide it to grow or shrink the black areas."],
+  mode:["Render mode","How the field is drawn: glossy colour Ferrofluid, or black & white Filled / Outline / Soft."],
+  palette:["Palette","Colour scheme for Ferrofluid mode — warm ground with near-black liquid, after the macro ferrofluid references."],
+  light:["Light angle","Direction the light comes from, in radians. Rotates the highlights and shadows around the raised tubes."],
+  relief:["Relief","How tall the fluid stands up. Higher makes rounder, more 3-D tubes and beads with stronger shading."],
+  gloss:["Gloss","Tightness of the wet highlight. Higher = sharper, glassier specular dots; lower = broad satin sheen."],
+  spec:["Specular","Strength of the wet highlights on the fluid."],
+  rim:["Rim light","Brightness of the light catching the edges of beads and ridges."],
+  vignette:["Vignette","Darkening toward the corners for the backlit macro-photo feel."],
+  field:["Field amount","How strongly the regime varies across the frame. 0 = one uniform pattern; higher = thick worms in one area, fine spots and bubbly holes in another."],
+  fldGrad:["Gradient","A smooth ramp of density across the frame, so the pattern thickens toward one side."],
+  fldAngle:["Gradient angle","Direction of that density ramp."],
+  fldNoise:["Noise","Patchy random variation in density — organic regions of different regimes."],
+  fldScale:["Noise scale","Size of those patches. Lower = big broad zones; higher = smaller, busier ones."],
+  paintSeed:["Draw seed","Drag on the canvas to seed new growth (the original draw mode)."],
+  paintDense:["Paint denser","Drag on the canvas to push that area toward thicker, more filled pattern."],
+  paintFine:["Paint finer","Drag on the canvas to push that area toward finer spots and holes."],
+  resetDensity:["Reset density","Clear everything you've painted into the density field."],
+  thresh:["Threshold","The cut-off that splits fluid from ground. Slide it to grow or shrink the fluid (fatter or thinner tubes)."],
   width:["Edge / width","In Outline and Soft modes: thickness of the line or softness of the edge."],
   invert:["Invert B/W","Swap black and white."],
   morph:["Auto-morph","Slowly drifts Feed & Kill through the interesting region over time, so the pattern keeps morphing between regimes — like the source video. Toggle with M."],
@@ -609,6 +812,8 @@ addEventListener("keydown",e=>{
 /* ---------- go ---------- */
 /* on phones, start with the panel tucked away so the artwork is front-and-centre */
 if(MOBILE){ document.body.classList.add("collapsed"); $("toggle").textContent="Show"; }
+refreshControls();
+updateModeUI();
 seed("spots");
 applyPreset(0);
 requestAnimationFrame(loop);

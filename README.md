@@ -35,7 +35,9 @@ node serve.mjs
 
 - **Presets (1–8 / buttons)** — jump to a named regime (Coral, Maze, Mitosis, Worms, Spirals, Zebra, Holes, Solitons).
 - **Reaction sliders** — Feed, Kill, Diffuse A/B, Time step, Speed (sim iterations per frame).
-- **Look** — render mode (Filled / Outline / Soft), threshold, edge width, Invert B/W.
+- **Look** — render mode (**Ferrofluid** glossy colour, or B&W Filled / Outline / Soft), threshold, edge width, Invert B/W.
+- **Ferrofluid material** — palette (Amber, Blood orange, Red/black, Cobalt+amber), light angle, relief, gloss, specular, rim light, vignette. Lights the pattern as a glossy raised liquid à la macro ferrofluid art.
+- **Regime field (density)** — make different areas of one frame sit in different regimes (thick worms, fine spots, bubbly holes) via a gradient + noise field, or paint density directly onto the canvas (Draw seed / Paint denser / Paint finer).
 - **Auto-morph (M)** — slowly drifts F & k through the interesting band → the morphing journey of the source.
 - **Seed** — Spots / Centre / Random / Rings, or **drag on the canvas** to draw.
 - **Record (R)** — captures the canvas to `recording.webm` at 60fps.
