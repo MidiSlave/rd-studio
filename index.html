@@ -157,7 +157,9 @@
     <div class="row"><label>Edge / width</label><input id="width" type="range" min="0.005" max="0.18" step="0.002"><span class="val" id="width_v"></span></div>
     <div class="btns">
       <button id="invert">Invert B/W</button>
+      <button id="classicBW">Classic B&amp;W</button>
     </div>
+    <div class="hint">Switch between the glossy <b>Ferrofluid</b> look and the original black &amp; white modes any time. <b>Classic B&amp;W</b> = Filled with the regime field off.</div>
   </div>
 
   <div class="grp" id="ferroGrp">
@@ -195,6 +197,9 @@
     </div>
     <div class="row"><label>Morph speed</label><input id="mspeed" type="range" min="0.05" max="2" step="0.05"><span class="val" id="mspeed_v"></span></div>
     <div class="hint">Auto-morph slowly drifts F &amp; k through the interesting band, reproducing the journey in the source video.</div>
+    <div class="btns" style="margin-top:8px"><button id="tiltBtn">Enable tilt</button></div>
+    <div class="row"><label>Tilt flow</label><input id="tiltFlow" type="range" min="0" max="1.5" step="0.05"><span class="val" id="tiltFlow_v"></span></div>
+    <div class="hint">On a phone, tilt to make the fluid flow and the highlights slosh like real liquid. Tap <b>Enable tilt</b> first (iOS asks permission). Works best in Ferrofluid mode.</div>
   </div>
 
   <div class="grp">
@@ -278,6 +283,8 @@ const P = {
   field:0.85, fldGrad:0.013, fldAngle:1.3, fldNoise:0.012, fldScale:3.0,
   // painting: 0 = seed B, 1 = paint density. dsign = +denser / -finer
   paintMode:0, dsign:1,
+  // gyro / tilt
+  tilt:false, tiltFlow:0.55,
 };
 const DEFAULTS = Object.freeze({ ...P });
 
@@ -302,8 +309,15 @@ uniform vec2 u_texel;
 uniform float u_dA,u_dB,u_feed,u_kill,u_dt;
 uniform vec2 u_brush; uniform float u_brushR,u_brushAmt;
 uniform float u_field,u_fGrad,u_fAngle,u_fNoise,u_fScale;  // spatial regime field
+uniform vec2 u_flow;                 // gyro/tilt advection (uv per sub-step)
 in vec2 v_uv; out vec4 o;
 vec2 s(vec2 uv){ return texture(u_state, uv).rg; }
+/* bilinear read so the field can drift by sub-texel amounts smoothly */
+vec2 sb(vec2 uv){
+  vec2 p=uv/u_texel - 0.5; vec2 i=floor(p), f=p-i; vec2 t=(i+0.5)*u_texel;
+  vec2 a=s(t), b=s(t+vec2(u_texel.x,0.)), c=s(t+vec2(0.,u_texel.y)), d=s(t+u_texel);
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
 
 /* cheap value-noise fbm so different regions land in different regimes */
 float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+34.45); return fract(p.x*p.y); }
@@ -313,12 +327,22 @@ float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
 float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vnoise(p); p*=2.0; a*=0.5; } return v; }
 
 void main(){
-  vec2 uv=v_uv; vec2 c=s(uv);
-  vec2 lap = c*-1.0
-    + (s(uv+vec2( u_texel.x,0.))+s(uv+vec2(-u_texel.x,0.))
-      +s(uv+vec2(0., u_texel.y))+s(uv+vec2(0.,-u_texel.y)))*0.2
-    + (s(uv+vec2( u_texel.x, u_texel.y))+s(uv+vec2(-u_texel.x, u_texel.y))
-      +s(uv+vec2( u_texel.x,-u_texel.y))+s(uv+vec2(-u_texel.x,-u_texel.y)))*0.05;
+  vec2 uv=v_uv; vec2 c; vec2 lap;
+  float tx=u_texel.x, ty=u_texel.y;
+  if(u_flow.x==0.0 && u_flow.y==0.0){
+    // fast path: no tilt advection -> nearest sampling on the grid (unchanged)
+    c=s(uv);
+    lap = c*-1.0
+      + (s(uv+vec2( tx,0.))+s(uv+vec2(-tx,0.))+s(uv+vec2(0., ty))+s(uv+vec2(0.,-ty)))*0.2
+      + (s(uv+vec2( tx, ty))+s(uv+vec2(-tx, ty))+s(uv+vec2( tx,-ty))+s(uv+vec2(-tx,-ty)))*0.05;
+  } else {
+    // tilt: advect the field by sampling upstream (bilinear, wraps seamlessly)
+    vec2 b=uv-u_flow;
+    c=sb(b);
+    lap = c*-1.0
+      + (sb(b+vec2( tx,0.))+sb(b+vec2(-tx,0.))+sb(b+vec2(0., ty))+sb(b+vec2(0.,-ty)))*0.2
+      + (sb(b+vec2( tx, ty))+sb(b+vec2(-tx, ty))+sb(b+vec2( tx,-ty))+sb(b+vec2(-tx,-ty)))*0.05;
+  }
 
   /* spatial regime field: a single scalar shifts feed & kill together along the
      viable band, so each region sits in its own regime (thick / fine / holes)
@@ -511,7 +535,7 @@ const U = {
   brushR:gl.getUniformLocation(simProg,"u_brushR"), brushAmt:gl.getUniformLocation(simProg,"u_brushAmt"),
   field:gl.getUniformLocation(simProg,"u_field"), fGrad:gl.getUniformLocation(simProg,"u_fGrad"),
   fAngle:gl.getUniformLocation(simProg,"u_fAngle"), fNoise:gl.getUniformLocation(simProg,"u_fNoise"),
-  fScale:gl.getUniformLocation(simProg,"u_fScale"),
+  fScale:gl.getUniformLocation(simProg,"u_fScale"), flow:gl.getUniformLocation(simProg,"u_flow"),
 };
 const RU = {
   state:gl.getUniformLocation(renderProg,"u_state"), size:gl.getUniformLocation(renderProg,"u_size"),
@@ -544,6 +568,9 @@ function step(){
   gl.uniform1f(U.brushAmt, 0.9);
   gl.uniform1f(U.field,P.field); gl.uniform1f(U.fGrad,P.fldGrad); gl.uniform1f(U.fAngle,P.fldAngle);
   gl.uniform1f(U.fNoise,P.fldNoise); gl.uniform1f(U.fScale,P.fldScale);
+  // gyro tilt -> advection (per sub-step). gX,gY are smoothed gravity in -1..1.
+  if(tiltOn){ gl.uniform2f(U.flow, gX*P.tiltFlow*0.0006, gY*P.tiltFlow*0.0006); }
+  else { gl.uniform2f(U.flow, 0, 0); }
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,paintCur); gl.uniform1i(U.param,1);
   const n=P.iters|0;
   for(let i=0;i<n;i++){
@@ -571,7 +598,9 @@ function draw(){
     const pal=PALETTES[P.palette]||PALETTES[0];
     gl.uniform3fv(RU.fluid,pal.fluid); gl.uniform3fv(RU.bgA,pal.bgA); gl.uniform3fv(RU.bgB,pal.bgB);
     gl.uniform3fv(RU.specCol,pal.spec); gl.uniform3fv(RU.rimCol,pal.rim);
-    gl.uniform1f(RU.light,P.light); gl.uniform1f(RU.relief,P.relief); gl.uniform1f(RU.gloss,P.gloss);
+    // when tilting, the light comes from the "uphill" side so highlights slosh
+    const lightAng = tiltOn ? Math.atan2(-gY,-gX) : P.light;
+    gl.uniform1f(RU.light,lightAng); gl.uniform1f(RU.relief,P.relief); gl.uniform1f(RU.gloss,P.gloss);
     gl.uniform1f(RU.spec,P.spec); gl.uniform1f(RU.rim,P.rim); gl.uniform1f(RU.vig,P.vignette);
   }
   gl.drawArrays(gl.TRIANGLES,0,3);
@@ -674,6 +703,7 @@ bindRange("fldGrad","fldGrad",x=>x.toFixed(4));
 bindRange("fldAngle","fldAngle",x=>x.toFixed(2));
 bindRange("fldNoise","fldNoise",x=>x.toFixed(4));
 bindRange("fldScale","fldScale",x=>x.toFixed(1));
+bindRange("tiltFlow","tiltFlow",x=>x.toFixed(2));
 
 /* palette dropdown */
 PALETTES.forEach((p,i)=>{ const o=document.createElement("option"); o.value=String(i); o.textContent=p.name; $("palette").appendChild(o); });
@@ -691,6 +721,30 @@ $("paintFine").addEventListener("click",()=>setPaintMode(1,-1));
 $("resetDensity").addEventListener("click",()=>paintClear());
 
 $("mode").addEventListener("change",e=>{ P.mode=parseInt(e.target.value); updateModeUI(); });
+
+/* one-tap return to the original look: Filled B&W with the regime field off */
+$("classicBW").addEventListener("click",()=>{ P.mode=0; P.field=0; refreshControls(); });
+
+/* ---------- gyro / tilt ---------- */
+let tiltOn=false, gX=0, gY=0;
+function onOrient(e){
+  // gamma = left/right tilt (-90..90), beta = front/back tilt (-180..180)
+  const tx=Math.max(-1,Math.min(1,(e.gamma||0)/45));
+  const ty=Math.max(-1,Math.min(1,(e.beta||0)/45));
+  gX += (tx-gX)*0.12; gY += (ty-gY)*0.12;          // smooth the sensor
+}
+function startTilt(){ window.addEventListener("deviceorientation",onOrient,true);
+  tiltOn=true; P.tilt=true; $("tiltBtn").classList.add("on"); $("tiltBtn").textContent="Tilt on"; }
+function stopTilt(){ window.removeEventListener("deviceorientation",onOrient,true);
+  tiltOn=false; P.tilt=false; gX=0; gY=0; $("tiltBtn").classList.remove("on"); $("tiltBtn").textContent="Enable tilt"; }
+function enableTilt(){
+  const DOE=window.DeviceOrientationEvent;
+  if(!DOE){ alert("This device has no orientation sensor."); return; }
+  if(typeof DOE.requestPermission==="function"){            // iOS 13+ needs a tap-gated grant
+    DOE.requestPermission().then(r=>{ if(r==="granted") startTilt(); else alert("Motion access was denied. Enable it in Settings › Safari › Motion & Orientation Access."); }).catch(()=>{});
+  } else { startTilt(); }
+}
+$("tiltBtn").addEventListener("click",()=> tiltOn ? stopTilt() : enableTilt());
 $("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
 $("morph").addEventListener("click",e=>{ P.morph=!P.morph; e.target.classList.toggle("on",P.morph); });
 $("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
@@ -723,6 +777,9 @@ const HELP = {
   paintDense:["Paint denser","Drag on the canvas to push that area toward thicker, more filled pattern."],
   paintFine:["Paint finer","Drag on the canvas to push that area toward finer spots and holes."],
   resetDensity:["Reset density","Clear everything you've painted into the density field."],
+  classicBW:["Classic B&W","Jump straight back to the original black & white look — Filled render with the regime field turned off."],
+  tiltBtn:["Enable tilt","Use the phone's motion sensor: tilt to make the fluid flow and the highlights slosh. iOS asks for permission the first time."],
+  tiltFlow:["Tilt flow","How strongly tilting the phone pushes the fluid in that direction."],
   thresh:["Threshold","The cut-off that splits fluid from ground. Slide it to grow or shrink the fluid (fatter or thinner tubes)."],
   width:["Edge / width","In Outline and Soft modes: thickness of the line or softness of the edge."],
   invert:["Invert B/W","Swap black and white."],
