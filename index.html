@@ -323,16 +323,18 @@ void main(){
   /* spatial regime field: a single scalar shifts feed & kill together along the
      viable band, so each region sits in its own regime (thick / fine / holes)
      yet never drifts out of the live zone into extinction. */
-  float feed=u_feed, kill=u_kill;
-  if(u_field>0.0){
-    vec2 dir=vec2(cos(u_fAngle), sin(u_fAngle));
-    float g=dot(uv-0.5, dir);                  // smooth ramp across the frame
-    float n=fbm(uv*u_fScale)-0.5;              // organic patches
-    float painted=texture(u_param,uv).r;       // user-painted bias
-    float ss=(g*u_fGrad + n*u_fNoise + painted*0.022)*u_field;
-    feed=clamp(feed+ss,       0.012, 0.090);
-    kill=clamp(kill+ss*0.28,  0.040, 0.072);
-  }
+  /* Procedural variation (gradient + noise) rides the curved live band by moving
+     feed & kill together (small shifts stay alive). Painting moves much further
+     along the "amount" axis, so it shifts feed a lot while barely touching kill —
+     low feed -> fine spots, high feed -> thick worms — never dropping out of the
+     band into the solid-fill zone. Painting applies regardless of Field amount. */
+  vec2 dir=vec2(cos(u_fAngle), sin(u_fAngle));
+  float g=dot(uv-0.5, dir);                    // smooth ramp across the frame
+  float n=fbm(uv*u_fScale)-0.5;                // organic patches
+  float proc=(g*u_fGrad + n*u_fNoise)*u_field;
+  float painted=texture(u_param,uv).r;         // -1 finer .. +1 denser
+  float feed=clamp(u_feed + proc        + painted*0.032,  0.026, 0.062);
+  float kill=clamp(u_kill + proc*0.28   + painted*0.0030, 0.054, 0.068);
 
   float A=c.r,B=c.g; float rab=A*B*B;
   A += (u_dA*lap.r - rab + feed*(1.0-A))*u_dt;
