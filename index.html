@@ -1125,16 +1125,13 @@ const STARTUP_LFOS = {
 for(const k in STARTUP_LFOS) setLfo(k, { on:true, ...STARTUP_LFOS[k] });
 requestAnimationFrame(loop);
 
-/* ---------- PWA service worker ---------- */
-/* TEMPORARILY DISABLED while we debug the iOS full-screen layout: a stale
-   cached shell makes it impossible to tell whether a fix has landed. This
-   actively unregisters any previously-installed worker and clears its caches,
-   so every load comes straight from the network. Re-enable real registration
-   (see git history) once the layout is confirmed. */
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.getRegistrations().then(rs=>{ for(const r of rs) r.unregister(); }).catch(()=>{});
+/* ---------- PWA: register the service worker (installable + offline) ---------- */
+/* Needs a secure context (https or localhost); skips silently otherwise.
+   The worker is network-first for navigations, so new deploys still show up
+   immediately when online. */
+if("serviceWorker" in navigator && (location.protocol==="https:" || location.hostname==="localhost")){
+  addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
 }
-if(window.caches && caches.keys){ caches.keys().then(ks=>{ for(const k of ks) caches.delete(k); }).catch(()=>{}); }
 </script>
 </body>
 </html>
