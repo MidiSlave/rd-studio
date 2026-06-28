@@ -7,6 +7,7 @@ backlit **ferrofluid** liquid, tweak everything live, and record the result to v
 **Live demo:** https://midislave.github.io/rd-studio/
 
 Single self-contained `index.html` — WebGL2, no build step, no dependencies.
+Installable as a **PWA**: add it to your home screen to run full-screen and offline.
 
 ## Credits & inspiration
 
@@ -28,8 +29,10 @@ through every classic regime:
 | radial zebra stripes      | zebra / waves     |
 | concentric spirals        | spirals           |
 
-The whole simulation runs on the GPU at 1260×1746 portrait, 60fps (a lighter resolution on
-phones — recordings are rescaled back up by `assemble.sh`).
+The whole simulation runs on the GPU at 60fps. On desktop it renders at 1260×1746; on phones
+the render matches the device's own screen resolution (so it stays Retina-sharp), while the
+underlying simulation grid is lighter to hold the framerate. Recordings are always normalised
+to 1260×1746 by `assemble.sh`.
 
 ## Run it
 
@@ -38,9 +41,13 @@ Open the [live demo](https://midislave.github.io/rd-studio/), or run locally:
 ```bash
 node serve.mjs            # then open http://localhost:8099/
 ```
-(or just double-click `index.html` — it works from `file://` too.)
+(or just double-click `index.html` — it works from `file://` too, though installable/offline PWA features need it served over http/https.)
 
 ## Controls
+
+**Display**
+- **Fill screen** — stretch the art edge-to-edge (cropping the sides) instead of letterboxing it; ideal on a phone. The choice is remembered.
+- **Fullscreen** — hide the browser chrome where supported. On iPhone, install to the Home Screen for the same chromeless result (the button hides itself there).
 
 **Render & look**
 - **Render mode** — **Ferrofluid** (glossy colour) or black & white **Filled** / **Outline** / **Soft**.
@@ -94,9 +101,10 @@ Keyboard: `Space` pause · `M` morph · `R` record · `C` clear · `I` invert ·
 
 ### On mobile
 
-Touch-friendly: the canvas fills the screen and the controls live in a slide-up sheet (tap **Show** /
-drag down to dismiss). Drag on the canvas to seed, and turn on
-**? Help** then tap any control to read what it does.
+Touch-friendly: the controls live in a slide-up sheet (tap **Show** / drag down to dismiss), with
+large tap targets and safe-area-aware layout. Drag on the canvas to seed, and turn on **? Help**
+then tap any control to read what it does. Use **Fill screen** for an edge-to-edge view, and
+**Add to Home Screen** to install it as a full-screen, offline app.
 
 ## Make a finished video
 
@@ -113,7 +121,7 @@ clip, render in a B&W mode before recording.)
 ## A good starting recipe
 
 1. Pick **Coral**, hit **Spots**, let it fill in.
-2. For the glossy look, leave **Ferrofluid** on; for mono, hit **Classic B&W**.
+2. For the glossy look, switch the render mode to **Ferrofluid**; for mono, hit **Classic B&W**.
 3. Hit **Morph** to set it wandering (or tap **~** on any slider to modulate just that one).
 4. **Record** ~30s, then `./assemble.sh`.
 
@@ -130,6 +138,9 @@ publishes to GitHub Pages on every push to `main`. You can also run it by hand f
 | File | Purpose |
 |------|---------|
 | `index.html` | The whole app (WebGL2 simulation + UI) |
+| `manifest.json` | PWA manifest (installable, standalone, portrait) |
+| `sw.js` | Service worker (offline shell, network-first page) |
+| `icons/` | App icons (`icon.svg` source + generated PNGs) |
 | `serve.mjs` | Tiny static server for local use |
 | `assemble.sh` | Turns a recording into `.mp4` + `.mov` |
 | `LICENSE` | MIT licence |
