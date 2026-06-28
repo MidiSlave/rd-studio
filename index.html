@@ -94,6 +94,15 @@
   #ferroGrp, #colGrp{ display:none; }
   body.ferro #ferroGrp, body.ferro #colGrp{ display:block; }
 
+  /* ===== wallpaper / screensaver mode (?wallpaper) =====
+     A clean, chrome-free, edge-to-edge render for use as a live macOS
+     screensaver (e.g. via WebViewScreenSaver pointed at this URL). */
+  body.wallpaper #panel,
+  body.wallpaper #toggle,
+  body.wallpaper #status,
+  body.wallpaper #help{ display:none !important; }
+  body.wallpaper canvas{ cursor:none; }
+
   /* ============================ mobile / touch ============================ */
   /* Portrait phones: canvas fills the screen, the panel becomes a bottom sheet
      that slides up over it instead of squeezing it into a sliver. */
@@ -298,6 +307,10 @@
    (the heavy part is the sim grid × iterations, not the final draw). */
 const MOBILE = (matchMedia("(pointer:coarse)").matches || matchMedia("(max-width:760px)").matches)
   && !matchMedia("(min-width:1100px)").matches;
+/* Wallpaper / screensaver mode: ?wallpaper (or ?wallpaper=1) hides all UI,
+   fills the screen, and randomises the look on each load so every screensaver
+   session looks different. */
+const WALLPAPER = new URLSearchParams(location.search).has("wallpaper");
 const SRC_W = 1260, SRC_H = 1746;                 // portrait output resolution
 const ASPECT = SRC_W / SRC_H;
 /* Backing-store (render) resolution. The render is a single fragment-shader pass
@@ -306,9 +319,42 @@ const ASPECT = SRC_W / SRC_H;
    sharp even when the art is cover-filled. Desktop keeps the canonical source
    size; assemble.sh rescales any recording back to 1260×1746 regardless. */
 const DPR = Math.min(window.devicePixelRatio || 1, 3);
-const OUT_H = MOBILE ? Math.min(2880, Math.round(Math.max(screen.width, screen.height) * DPR)) : SRC_H;
-const OUT_W = MOBILE ? Math.round(OUT_H * ASPECT) : SRC_W;
-let SIM_W = MOBILE ? 380 : 600, SIM_H = Math.round(SIM_W / ASPECT);   // simulation grid (the expensive part)
+/* Backing-store (render) resolution. The render is one fragment-shader pass, so
+   it's cheap to keep crisp — we size it to how the canvas is actually shown, in
+   device pixels, and recompute when that changes (window resize / fullscreen /
+   fill). Recordings are normalised to 1260×1746 by assemble.sh, so a larger
+   canvas never hurts capture. */
+let OUT_W = 0, OUT_H = 0;
+function computeBacking(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const fill = document.body.classList.contains("fill");
+  const fs   = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if(WALLPAPER || fill){
+    // cover the viewport: portrait art on a landscape screen, so the WIDTH binds.
+    // Match backing-store width to the viewport width; the taller height follows
+    // from the portrait aspect and is cropped by object-fit:cover.
+    const W = Math.min(3840, Math.round(Math.max(1, window.innerWidth) * dpr));
+    return { w:W, h:Math.round(W/ASPECT) };
+  }
+  if(fs){
+    // letterboxed fullscreen: the portrait art is shown full-height, so HEIGHT binds.
+    const H = Math.min(2880, Math.round(Math.max(1, window.innerHeight) * dpr));
+    return { w:Math.round(H*ASPECT), h:H };
+  }
+  if(MOBILE){
+    const H = Math.min(2880, Math.round(Math.max(screen.width, screen.height) * dpr));
+    return { w:Math.round(H*ASPECT), h:H };
+  }
+  return { w:SRC_W, h:SRC_H };   // desktop, windowed: canonical size (native capture)
+}
+function resizeBacking(){
+  const b = computeBacking();
+  if(b.w===OUT_W && b.h===OUT_H) return;
+  OUT_W=b.w; OUT_H=b.h; canvas.width=OUT_W; canvas.height=OUT_H;
+}
+// simulation grid (the expensive part). Wallpaper runs only when idle, so we can
+// afford a finer grid for crisper pattern detail to match the higher render res.
+let SIM_W = WALLPAPER ? 800 : (MOBILE ? 380 : 600), SIM_H = Math.round(SIM_W / ASPECT);
 
 /* ---------- presets (Pearson / Munafo classification of Gray-Scott regimes) ---------- */
 const PRESETS = [
@@ -357,7 +403,7 @@ const P = {
 const DEFAULTS = Object.freeze({ ...P });
 
 const canvas = document.getElementById("c");
-canvas.width = OUT_W; canvas.height = OUT_H;
+resizeBacking();
 const gl = canvas.getContext("webgl2", { antialias:false, preserveDrawingBuffer:true });
 
 function fatal(msg){ const e=document.getElementById("err"); e.style.display="flex"; e.textContent=msg; throw new Error(msg); }
@@ -958,7 +1004,12 @@ $("toggle").addEventListener("click",()=>{ const c=document.body.classList.toggl
 /* ---------- display: fill-screen + fullscreen ---------- */
 function setFill(on){ document.body.classList.toggle("fill",on); $("fillBtn").classList.toggle("on",on);
   try{ localStorage.setItem("rd_fill", on?"1":"0"); }catch(e){}
-  if(on && MOBILE){ document.body.classList.add("collapsed"); $("toggle").textContent="Show"; } }
+  if(on && MOBILE){ document.body.classList.add("collapsed"); $("toggle").textContent="Show"; }
+  resizeBacking(); }
+/* keep the render resolution matched to the on-screen size */
+let _resizePending=false;
+addEventListener("resize",()=>{ if(_resizePending) return; _resizePending=true;
+  requestAnimationFrame(()=>{ _resizePending=false; resizeBacking(); }); });
 $("fillBtn").addEventListener("click",()=> setFill(!document.body.classList.contains("fill")));
 // restore saved preference
 try{ if(localStorage.getItem("rd_fill")==="1") setFill(true); }catch(e){}
@@ -972,7 +1023,8 @@ else {
     else { (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }
   });
   const syncFs=()=>{ const on=!!(document.fullscreenElement||document.webkitFullscreenElement);
-    $("fsBtn").classList.toggle("on",on); $("fsBtn").textContent = on?"Exit fullscreen":"Fullscreen"; };
+    $("fsBtn").classList.toggle("on",on); $("fsBtn").textContent = on?"Exit fullscreen":"Fullscreen";
+    resizeBacking(); };
   document.addEventListener("fullscreenchange",syncFs);
   document.addEventListener("webkitfullscreenchange",syncFs);
 }
@@ -1123,6 +1175,51 @@ const STARTUP_LFOS = {
   hueDrift:{ rate:0.19, depth:1.00, wave:0 },
 };
 for(const k in STARTUP_LFOS) setLfo(k, { on:true, ...STARTUP_LFOS[k] });
+
+/* ---------- wallpaper / screensaver mode ---------- */
+/* Strip the UI, fill the screen, and roll a fresh look so each screensaver
+   session is different. Only safe, known-alive dimensions are randomised
+   (a classic regime preset for F/k, palette, light/flow/hue angles, seed),
+   so it can never boot into an empty/extinct field. */
+function randomiseWallpaper(){
+  const rint=n=>Math.floor(Math.random()*n);
+  const pick=a=>a[rint(a.length)];
+  const rr=(a,b)=>a+Math.random()*(b-a);
+
+  document.body.classList.add("wallpaper");
+  setFill(true);
+  document.body.classList.add("collapsed");
+
+  // starting regime: a classic Gray-Scott preset (known to live)
+  const pr=pick(PRESETS);
+  setBase("feed",pr.feed); setBase("kill",pr.kill);
+
+  // mostly the glossy ferrofluid look, occasionally classic black & white
+  if(Math.random()<0.78){
+    P.mode=3;
+    P.palette=rint(PALETTES.length);
+    P.light=rr(0,6.2831);
+    P.hue=rr(0,6.2831);
+    P.relief=rr(1.8,3.4);
+    P.colour=Math.random()<0.5;
+    P.colSpread=rr(0.6,2.2);
+  } else {
+    P.mode=pick([0,1]);                 // filled or soft B&W
+    P.invert=Math.random()<0.5?1:0;
+  }
+
+  // a different comb / drift direction each time — kept gentle so the fluid
+  // creeps rather than slides (wallpaper wants slow, ambient motion)
+  P.flowAngle=rr(0,6.2831);
+  P.flowStr=rr(0,0.06);
+  P.fldAngle=rr(0,6.2831);
+
+  refreshControls();
+  updateModeUI();
+  seed(pick(["spots","random","rings","centre"]));
+}
+if(WALLPAPER) randomiseWallpaper();
+
 requestAnimationFrame(loop);
 
 /* ---------- PWA: register the service worker (installable + offline) ---------- */
