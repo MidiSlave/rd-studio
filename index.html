@@ -233,12 +233,6 @@
     <div class="btns" style="margin-top:8px"><button id="tiltBtn">Enable tilt</button></div>
     <div class="row"><label>Tilt flow</label><input id="tiltFlow" type="range" min="0" max="1.5" step="0.05"><span class="val" id="tiltFlow_v"></span></div>
     <div class="hint">On a phone, tilt to make the fluid flow and the highlights slosh like real liquid. Tap <b>Enable tilt</b> first (iOS asks permission). Works best in Ferrofluid mode.</div>
-    <div class="btns" style="margin-top:10px"><button id="lensBtn">Lens bubble</button><button id="lensRoamBtn">Roam</button></div>
-    <div class="row"><label>Lens size</label><input id="lensRadius" type="range" min="0.06" max="0.4" step="0.01"><span class="val" id="lensRadius_v"></span></div>
-    <div class="row"><label>Lens warp</label><input id="lensStr" type="range" min="0.1" max="0.6" step="0.02"><span class="val" id="lensStr_v"></span></div>
-    <div class="row"><label>Roam speed</label><input id="lensSpeed" type="range" min="0" max="2" step="0.05"><span class="val" id="lensSpeed_v"></span></div>
-    <div class="row"><label>Roam range</label><input id="lensRange" type="range" min="0" max="0.45" step="0.01"><span class="val" id="lensRange_v"></span></div>
-    <div class="hint">A glassy droplet magnifies the pattern beneath it like a fisheye lens. <b>Drag it</b> on the canvas to move it by hand, or turn on <b>Roam</b> to let it wander (set its speed &amp; range). Works in every render mode.</div>
   </div>
 
   <div class="grp">
@@ -312,21 +306,18 @@ const PALETTES = [
 
 /* ---------- state ---------- */
 const P = {
-  feed:0.0545, kill:0.0620, dA:1.0, dB:0.5, dt:1.0, iters:14,
-  mode:3, thresh:0.18, width:0.06, invert:0,
+  feed:0.045892696553843065, kill:0.0632, dA:0.37, dB:0.11407046762496154, dt:1.0, iters:16,
+  mode:0, thresh:0.18, width:0.06, invert:0,
   brush:24,
   paused:false,
   // ferrofluid look (mode 3)
-  palette:0, light:2.4, relief:2.4, gloss:26, spec:0.95, rim:0.55, vignette:0.45,
+  palette:0, light:0, relief:2.4, gloss:7, spec:1.72, rim:0.55, vignette:0.45,
   // glossy beads (reflection), backlit glow/bloom, slow hue drift
-  glow:0.7, env:0.6, hue:0, hueDrift:0.12,
-  // fisheye lens bubble — manual/stationary by default; optional roaming
-  lens:false, lensStr:0.35, lensRadius:0.18,
-  lensRoam:false, lensSpeed:0.5, lensRange:0.28, lensX:0.5, lensY:0.5,
+  glow:1.1080752905142697, env:0.6, hue:2.6878339579266703, hueDrift:0,
   // spatial regime field — one scalar drifts F & k together along the live band.
   // tuned to span fine maze -> coarse beads -> thick worms in one frame (macro-ferro
   // reference); the kill co-variation keeps every region inside the live band.
-  field:1.0, fldGrad:0.020, fldAngle:1.3, fldNoise:0.018, fldScale:2.5,
+  field:0.624617195095581, fldGrad:0.020, fldAngle:4.430184539239731, fldNoise:0.002153079125039071, fldScale:2.5,
   // painting: 0 = seed B, 1 = paint density. dsign = +denser / -finer
   paintMode:0, dsign:1,
   // gyro / tilt
@@ -437,18 +428,9 @@ uniform vec3 u_fluid,u_bgA,u_bgB,u_specCol,u_rimCol;     // ferrofluid palette
 uniform float u_light,u_relief,u_gloss,u_spec,u_rim,u_vig;
 uniform float u_glow,u_env,u_hue;                        // backlit glow, reflection, hue drift
 uniform float u_colOn,u_colSpread;                       // colour pickup (spread = hue range around palette)
-uniform vec2 u_lensC; uniform float u_lensR,u_lensStr;   // fisheye lens bubble
 in vec2 v_uv; out vec4 o;
 
 float aspect(){ return u_size.x/u_size.y; }
-/* fisheye magnifier: bulge uv inside a roaming circle (applies to every mode) */
-vec2 applyLens(vec2 uv){
-  if(u_lensStr<=0.0) return uv;
-  vec2 d=uv-u_lensC; float r=length(vec2(d.x*aspect(),d.y))/u_lensR;
-  if(r>=1.0) return uv;
-  return u_lensC + d*(1.0 - u_lensStr*(1.0-r*r));        // <1 magnifies the centre
-}
-float lensMask(vec2 uv){ vec2 d=uv-u_lensC; return length(vec2(d.x*aspect(),d.y))/u_lensR; }
 
 float sampB(vec2 uv){
   // manual bilinear so it stays smooth without float-linear filtering
@@ -488,7 +470,7 @@ float glowMask(vec2 uv){
 }
 
 void main(){
-  vec2 uv = applyLens(v_uv);
+  vec2 uv = v_uv;
   vec3 col;
   if(u_mode==3){
     /* ---- glossy two-tone ferrofluid: bright lit ridges on near-black ---- */
@@ -525,14 +507,6 @@ void main(){
     else { float dd = abs(B-u_thresh); ink = 1.0 - smoothstep(u_width*0.5, u_width, dd); }
     ink = mix(ink, 1.0-ink, u_invert);
     col = vec3(1.0-ink);  // ink=1 -> black on white
-  }
-  /* soft wet glint inside the bubble — no perimeter shadow; fades with strength */
-  if(u_lensStr>0.0){
-    float ls = clamp(u_lensStr*3.0, 0.0, 1.0);
-    float r = lensMask(v_uv);
-    vec2 gp = u_lensC + vec2(-0.28,0.30)*u_lensR;           // glint upper-left
-    float gd = length(vec2((v_uv.x-gp.x)*aspect(), v_uv.y-gp.y))/u_lensR;
-    if(u_mode==3) col += vec3(1.0)*smoothstep(0.16,0.0,gd)*0.45*ls*step(r,1.0);
   }
   o = vec4(clamp(col,0.0,1.0), 1.0);
 }`;
@@ -669,23 +643,17 @@ const RU = {
   glow:gl.getUniformLocation(renderProg,"u_glow"), env:gl.getUniformLocation(renderProg,"u_env"),
   hue:gl.getUniformLocation(renderProg,"u_hue"), colOn:gl.getUniformLocation(renderProg,"u_colOn"),
   colSpread:gl.getUniformLocation(renderProg,"u_colSpread"),
-  lensC:gl.getUniformLocation(renderProg,"u_lensC"), lensR:gl.getUniformLocation(renderProg,"u_lensR"),
-  lensStr:gl.getUniformLocation(renderProg,"u_lensStr"),
 };
 
 /* ---------- brush input ---------- */
 let brush={x:-1,y:-1,down:false};
 function evToUv(e){ const r=canvas.getBoundingClientRect();
   const x=(e.clientX-r.left)/r.width, y=1.0-(e.clientY-r.top)/r.height; return {x,y}; }
-function lensHit(x,y){ const dx=(x-lensCx)*ASPECT, dy=(y-lensCy); return Math.hypot(dx,dy) < P.lensRadius; }
 canvas.addEventListener("pointerdown",e=>{ const u=evToUv(e);
-  // grab the bubble to drag it; otherwise seed/paint as usual
-  if(P.lens && lensStrCur>0.01 && lensHit(u.x,u.y)){ lensDrag=true; P.lensX=u.x; P.lensY=u.y; canvas.setPointerCapture(e.pointerId); return; }
   brush.down=true; brush.x=u.x; brush.y=u.y; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener("pointermove",e=>{ const u=evToUv(e);
-  if(lensDrag){ P.lensX=u.x; P.lensY=u.y; return; }
   if(!brush.down)return; brush.x=u.x; brush.y=u.y; });
-canvas.addEventListener("pointerup",e=>{ if(lensDrag){ lensDrag=false; return; } brush.down=false; brush.x=-1; });
+canvas.addEventListener("pointerup",e=>{ brush.down=false; brush.x=-1; });
 
 /* ---------- simulation step ---------- */
 function step(){
@@ -731,7 +699,6 @@ function draw(){
   gl.uniform1f(RU.width,P.width); gl.uniform1f(RU.invert,P.invert);
   gl.uniform1f(RU.glow,P.glow); gl.uniform1f(RU.env,P.env); gl.uniform1f(RU.hue,P.hue);
   gl.uniform1f(RU.colOn, P.colour?1:0); gl.uniform1f(RU.colSpread, P.colSpread);
-  gl.uniform2f(RU.lensC, lensCx, lensCy); gl.uniform1f(RU.lensR, P.lensRadius); gl.uniform1f(RU.lensStr, lensStrCur);
   if(P.mode===3){
     const pal=PALETTES[P.palette]||PALETTES[0];
     gl.uniform3fv(RU.fluid,pal.fluid); gl.uniform3fv(RU.bgA,pal.bgA); gl.uniform3fv(RU.bgB,pal.bgB);
@@ -786,21 +753,11 @@ function maybeRescue(dtSec){
   if(sum/(SIM_W*SIM_H) < 0.004) seed("spots");           // collapsed -> reseed
 }
 
-/* ---------- hue drift + fisheye lens (manual by default, optional roam) ---------- */
-let lensCx=0.5, lensCy=0.5, lensStrCur=0, lensT=0, lensDrag=false;
+/* ---------- hue drift ---------- */
 function animateLook(dt){
   // slow hue drift (warm palette eases through orange -> red -> ... like the reference)
   P.hue = (P.hue + dt*P.hueDrift*0.25) % 6.2831853;
   if(P.colour) P.colShift = (P.colShift + dt*0.05) % 6.2831853;   // colour source slowly evolves
-  // position: sit at the manual point, unless Roam is on (and not being dragged)
-  if(P.lensRoam && !lensDrag){
-    lensT += dt*P.lensSpeed;
-    lensCx = Math.min(0.98,Math.max(0.02, P.lensX + P.lensRange*Math.sin(lensT*0.7)));
-    lensCy = Math.min(0.98,Math.max(0.02, P.lensY + P.lensRange*1.13*Math.sin(lensT*0.53+1.1)));
-  } else { lensCx=P.lensX; lensCy=P.lensY; }
-  const target = P.lens ? P.lensStr : 0;
-  lensStrCur += (target-lensStrCur)*0.08;
-  if(target===0 && lensStrCur<0.004) lensStrCur=0;   // clear fully so nothing lingers when off
 }
 
 /* ---------- main loop ---------- */
@@ -841,8 +798,6 @@ function refreshControls(){ RANGES.forEach(f=>f());
   $("mode").value=String(P.mode);
   $("palette").value=String(P.palette);
   $("invert").classList.toggle("on",!!P.invert);
-  $("lensBtn").classList.toggle("on",P.lens);
-  $("lensRoamBtn").classList.toggle("on",P.lensRoam);
   $("colBtn").classList.toggle("on",P.colour);
   if($("morphBtn")) $("morphBtn").classList.toggle("on", MOD.feed.on);
   setPaintMode(P.paintMode, P.dsign);
@@ -918,10 +873,6 @@ bindRange("tiltFlow","tiltFlow",x=>x.toFixed(2));
 bindRange("env","env",x=>x.toFixed(2));
 bindRange("glow","glow",x=>x.toFixed(2));
 bindRange("hueDrift","hueDrift",x=>x.toFixed(2));
-bindRange("lensRadius","lensRadius",x=>x.toFixed(2));
-bindRange("lensStr","lensStr",x=>x.toFixed(2));
-bindRange("lensSpeed","lensSpeed",x=>x.toFixed(2));
-bindRange("lensRange","lensRange",x=>x.toFixed(2));
 bindRange("flowStr","flowStr",x=>x.toFixed(2));
 bindRange("flowAngle","flowAngle",x=>x.toFixed(2));
 bindRange("colSpread","colSpread",x=>x.toFixed(2));
@@ -970,8 +921,6 @@ function enableTilt(){
 $("tiltBtn").addEventListener("click",()=> tiltOn ? stopTilt() : enableTilt());
 $("invert").addEventListener("click",e=>{ P.invert=P.invert?0:1; e.target.classList.toggle("on",!!P.invert); });
 $("morphBtn").addEventListener("click",()=>applyMorph());
-$("lensBtn").addEventListener("click",e=>{ P.lens=!P.lens; e.target.classList.toggle("on",P.lens); });
-$("lensRoamBtn").addEventListener("click",e=>{ P.lensRoam=!P.lensRoam; e.target.classList.toggle("on",P.lensRoam); });
 $("colBtn").addEventListener("click",e=>{ P.colour=!P.colour; e.target.classList.toggle("on",P.colour); });
 $("pause").addEventListener("click",()=>{ P.paused=!P.paused; });
 $("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEFAULTS.mode; clearAllLfo(); refreshControls(); });
@@ -997,12 +946,6 @@ const HELP = {
   env:["Reflection","Strength of the wet studio reflection on the glossy beads — the key to the liquid-metal sheen seen in the reference."],
   glow:["Glow / bloom","Warm light blooming around the bright fluid, for the backlit macro-photo luminosity."],
   hueDrift:["Hue drift","How fast the palette slowly eases through hues over time. 0 holds a fixed colour."],
-  lensBtn:["Lens bubble","A glassy droplet that magnifies the pattern beneath it like a fisheye lens. Stationary by default — drag it on the canvas to move it. Works in every render mode."],
-  lensRoamBtn:["Roam","Let the lens wander on its own instead of sitting still. Set how fast and how far with Roam speed & range."],
-  lensRadius:["Lens size","How big the magnifying droplet is."],
-  lensStr:["Lens warp","How strongly the droplet bulges and magnifies the pattern beneath it."],
-  lensSpeed:["Roam speed","How fast the lens drifts when Roam is on. 0 holds it still."],
-  lensRange:["Roam range","How far the lens wanders from its current spot when Roam is on."],
   flowStr:["Flow","Push the fluid in a direction so it flows and drags into combs. Works on desktop with no tilt needed, and drives the colour pickup."],
   flowAngle:["Flow angle","The direction the fluid flows."],
   colBtn:["Colour bleed","The fluid picks up & blends a range of hues around the selected Palette as it moves. Ferrofluid mode — drive it with Flow."],
@@ -1117,7 +1060,17 @@ document.querySelectorAll("#panel .grp > h2").forEach(h=>{
   h.addEventListener("click",()=> h.parentElement.classList.toggle("collapsed"));
 });
 seed("spots");
-applyPreset(0);
+/* load-time LFOs (saved defaults) */
+const STARTUP_LFOS = {
+  dB:      { rate:0.17, depth:0.10, wave:0 },
+  light:   { rate:0.08, depth:0.90, wave:0 },
+  field:   { rate:0.34, depth:0.17, wave:0 },
+  fldAngle:{ rate:0.20, depth:1.00, wave:0 },
+  fldNoise:{ rate:0.18, depth:1.00, wave:0 },
+  glow:    { rate:0.20, depth:0.67, wave:0 },
+  hueDrift:{ rate:0.19, depth:1.00, wave:0 },
+};
+for(const k in STARTUP_LFOS) setLfo(k, { on:true, ...STARTUP_LFOS[k] });
 requestAnimationFrame(loop);
 </script>
 </body>

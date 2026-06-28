@@ -74,10 +74,9 @@ coarse beads, thick worms) at once.
 **Motion & flow**
 - **Flow** — push the fluid in a direction (**Flow** strength + **Flow angle**) so it drifts and drags into combs. Works on desktop with no gyro, and drives the colour pickup.
 - **Tilt** — on a phone, tilt to make the fluid flow and the highlights slosh (iOS asks permission). **Tilt flow** sets the strength.
-- **Lens bubble** — a glassy droplet that magnifies the pattern beneath it like a fisheye lens. Stationary by default — **drag it on the canvas** to move it — or turn on **Roam** to let it wander (**Roam speed / range**). **Lens size / warp** set its look. Works in every render mode.
 
 **Modulation — an LFO on any parameter**
-- Every slider has a small **`~`** button. Tap it to modulate that parameter with an **LFO** — a compact **rate / depth / waveform** strip appears under the slider and the value sweeps on its own. Waveforms: sine, triangle, saw, square, random (sample-&-hold).
+- Every slider has a small **`~`** button. Tap it to modulate that parameter with an **LFO** — a compact **rate / depth / offset / waveform** strip appears under the slider and the value sweeps on its own. **Offset** shifts the oscillation centre off the base value. Tap the **LFO params** header to collapse a strip while the LFO keeps running. Waveforms: sine, triangle, saw, square, random (sample-&-hold).
 - **Morph (M)** is a one-tap preset: phase-offset LFOs on Feed + Kill (what Auto-morph used to do). Tap again to clear.
 - **Reset to defaults** clears all LFOs.
 
@@ -96,7 +95,7 @@ Keyboard: `Space` pause · `M` morph · `R` record · `C` clear · `I` invert ·
 ### On mobile
 
 Touch-friendly: the canvas fills the screen and the controls live in a slide-up sheet (tap **Show** /
-drag down to dismiss). Drag on the canvas to seed, drag the lens bubble to move it, and turn on
+drag down to dismiss). Drag on the canvas to seed, and turn on
 **? Help** then tap any control to read what it does.
 
 ## Make a finished video
