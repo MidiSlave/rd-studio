@@ -6,7 +6,7 @@
      - other GETs   -> stale-while-revalidate (instant from cache, refreshed in
                        the background).
    Bump CACHE whenever the precached shell changes to evict the old cache. */
-const CACHE = "rd-studio-v2";
+const CACHE = "rd-studio-v3";
 const SHELL = [
   "./",
   "./index.html",

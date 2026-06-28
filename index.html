@@ -14,7 +14,11 @@
 <style>
   :root{ --bg:#0c0d10; --panel:#16181d; --line:#262a31; --txt:#d7dbe2; --dim:#838b98; --accent:#e7e9ee; }
   *{ box-sizing:border-box; }
-  html,body{ margin:0; height:100%; background:var(--bg); color:var(--txt);
+  /* NOTE: do NOT use height:100% here — on iOS it silently disables
+     viewport-fit=cover, so content (and env safe-area insets) stop reaching the
+     home-indicator area and a black bar appears. Use a viewport-unit height,
+     which still gives the desktop panel a definite parent height. */
+  html,body{ margin:0; height:100vh; height:100dvh; background:var(--bg); color:var(--txt);
     font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden;
     -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
   #stage{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
