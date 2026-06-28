@@ -132,3 +132,12 @@ publishes to GitHub Pages on every push to `main`. You can also run it by hand f
 | `index.html` | The whole app (WebGL2 simulation + UI) |
 | `serve.mjs` | Tiny static server for local use |
 | `assemble.sh` | Turns a recording into `.mp4` + `.mov` |
+| `LICENSE` | MIT licence |
+
+## License
+
+The code in this repository is released under the [MIT License](LICENSE) — © 2026 Nathan MacGregor.
+
+This licence covers the original code and ideas here only. It does **not** extend to the
+third-party ferrofluid artwork referenced under *Credits & inspiration* above, which remains
+the property of its respective artist and is never committed to this repo.
