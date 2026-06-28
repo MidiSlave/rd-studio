@@ -14,11 +14,10 @@
 <style>
   :root{ --bg:#0c0d10; --panel:#16181d; --line:#262a31; --txt:#d7dbe2; --dim:#838b98; --accent:#e7e9ee; }
   *{ box-sizing:border-box; }
-  /* NOTE: do NOT use height:100% here — on iOS it silently disables
-     viewport-fit=cover, so content (and env safe-area insets) stop reaching the
-     home-indicator area and a black bar appears. Use a viewport-unit height,
-     which still gives the desktop panel a definite parent height. */
-  html,body{ margin:0; height:100vh; height:100dvh; background:var(--bg); color:var(--txt);
+  /* iOS full-screen gotcha: use height:100vh here — NOT 100% (disables
+     viewport-fit=cover) and NOT 100dvh (under-reports, leaves a bottom gap).
+     On iOS 26, 100vh resolves to the full window height. */
+  html,body{ margin:0; height:100vh; background:var(--bg); color:var(--txt);
     font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden;
     -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
   #stage{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
@@ -29,19 +28,11 @@
      the portrait art so it goes edge-to-edge (the pattern is continuous, so the
      crop reads as intentional). Letterboxed mode is the default. */
   body.fill #stage{ align-items:center; justify-content:center; padding:0; }
-  /* Cover the whole physical screen, including under the notch / home indicator.
-     We size with the largest-viewport units (lvh/lvw) and then deliberately
-     bleed past the safe-area insets: the canvas is shifted up by the top inset
-     and made taller/wider by the top+bottom / left+right insets. Because
-     object-fit:cover crops any overflow, over-extending can only ever fill more
-     of the screen, never less — so this reaches the physical edges regardless of
-     how a given iOS version accounts for the safe areas. */
+  /* Cover the whole screen. Plain 100vw/100vh is the documented full-screen iOS
+     PWA recipe (with viewport-fit=cover); dvh/lvh/% all leave a bottom gap.
+     object-fit:cover crops the portrait art's sides to fill edge-to-edge. */
   body.fill canvas{ position:fixed; top:0; left:0; max-width:none; max-height:none;
-    width:100vw; height:100vh;                 /* fallback for engines without lvh */
-    top:calc(-1 * env(safe-area-inset-top));
-    width:calc(100lvw + env(safe-area-inset-left) + env(safe-area-inset-right));
-    height:calc(100lvh + env(safe-area-inset-top) + env(safe-area-inset-bottom));
-    object-fit:cover; box-shadow:none; transition:none; }
+    width:100vw; height:100vh; object-fit:cover; box-shadow:none; transition:none; }
   #panel{ position:fixed; top:0; right:0; width:300px; height:100%; background:var(--panel);
     border-left:1px solid var(--line); padding:14px 14px 40px; overflow-y:auto; overflow-x:hidden; transition:transform .25s ease;
     scrollbar-width:thin; scrollbar-color:#2c313a transparent; }
@@ -1134,11 +1125,16 @@ const STARTUP_LFOS = {
 for(const k in STARTUP_LFOS) setLfo(k, { on:true, ...STARTUP_LFOS[k] });
 requestAnimationFrame(loop);
 
-/* ---------- PWA: register the service worker (installable + offline) ---------- */
-/* Needs a secure context (https or localhost); skips silently otherwise. */
-if("serviceWorker" in navigator && (location.protocol==="https:" || location.hostname==="localhost")){
-  addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+/* ---------- PWA service worker ---------- */
+/* TEMPORARILY DISABLED while we debug the iOS full-screen layout: a stale
+   cached shell makes it impossible to tell whether a fix has landed. This
+   actively unregisters any previously-installed worker and clears its caches,
+   so every load comes straight from the network. Re-enable real registration
+   (see git history) once the layout is confirmed. */
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.getRegistrations().then(rs=>{ for(const r of rs) r.unregister(); }).catch(()=>{});
 }
+if(window.caches && caches.keys){ caches.keys().then(ks=>{ for(const k of ks) caches.delete(k); }).catch(()=>{}); }
 </script>
 </body>
 </html>
