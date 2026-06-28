@@ -25,10 +25,13 @@
      the portrait art so it goes edge-to-edge (the pattern is continuous, so the
      crop reads as intentional). Letterboxed mode is the default. */
   body.fill #stage{ align-items:center; justify-content:center; padding:0; }
-  /* Pin the canvas to the real fixed viewport (inset:0) rather than vh/dvh units,
-     which under-report on iOS and leave a gap at the bottom. viewport-fit=cover
-     lets it extend under the notch / home-indicator safe areas. */
-  body.fill canvas{ position:fixed; inset:0; width:100%; height:100%; max-width:none; max-height:none;
+  /* Cover the whole screen. Use the *largest* viewport units (lvh/lvw) so the
+     canvas reaches under the home indicator / address bar. iOS 26 makes 100vh =
+     full window height (the fallback below); lvh is the explicit largest-viewport
+     unit where supported. Percentage/dvh under-report and leave a bottom gap.
+     viewport-fit=cover lets it bleed into the safe areas. */
+  body.fill canvas{ position:fixed; top:0; left:0; max-width:none; max-height:none;
+    width:100vw; height:100vh; width:100lvw; height:100lvh;
     object-fit:cover; box-shadow:none; transition:none; }
   #panel{ position:fixed; top:0; right:0; width:300px; height:100%; background:var(--panel);
     border-left:1px solid var(--line); padding:14px 14px 40px; overflow-y:auto; overflow-x:hidden; transition:transform .25s ease;
