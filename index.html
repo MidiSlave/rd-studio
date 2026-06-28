@@ -86,7 +86,9 @@
   .lfostrip.closed .lfobody{ display:none; }
   .grp.collapsed .lfostrip{ display:none; }
   select{ background:#20242b; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:5px; flex:1 1 auto; min-width:0; }
-  .hint{ color:var(--dim); font-size:10.5px; margin-top:8px; }
+  /* inline explanations are hidden by default — revealed only with "? Help" on */
+  .hint{ color:var(--dim); font-size:10.5px; margin-top:8px; display:none; }
+  body.help-on .hint{ display:block; }
   kbd{ background:#20242b; border:1px solid var(--line); border-radius:3px; padding:0 4px; font-size:10px; }
   #status{ position:fixed; left:10px; bottom:8px; color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums; }
   #err{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; padding:40px;
