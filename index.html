@@ -25,7 +25,10 @@
      the portrait art so it goes edge-to-edge (the pattern is continuous, so the
      crop reads as intentional). Letterboxed mode is the default. */
   body.fill #stage{ align-items:center; justify-content:center; padding:0; }
-  body.fill canvas{ width:100vw; height:100vh; height:100dvh; max-width:none; max-height:none;
+  /* Pin the canvas to the real fixed viewport (inset:0) rather than vh/dvh units,
+     which under-report on iOS and leave a gap at the bottom. viewport-fit=cover
+     lets it extend under the notch / home-indicator safe areas. */
+  body.fill canvas{ position:fixed; inset:0; width:100%; height:100%; max-width:none; max-height:none;
     object-fit:cover; box-shadow:none; transition:none; }
   #panel{ position:fixed; top:0; right:0; width:300px; height:100%; background:var(--panel);
     border-left:1px solid var(--line); padding:14px 14px 40px; overflow-y:auto; overflow-x:hidden; transition:transform .25s ease;
@@ -288,17 +291,21 @@
 <script type="text/javascript">
 "use strict";
 /* ---------- config ---------- */
-/* Detect touch / small-screen devices so we can lighten the GPU load: the full
-   1260×1746 backing store + 600-wide sim grid is wasteful on a phone where the
-   canvas is only a few hundred CSS pixels wide. assemble.sh rescales any
-   recording back to 1260×1746, so a smaller mobile resolution stays compatible. */
+/* Detect touch / small-screen devices so we can lighten the *simulation* load
+   (the heavy part is the sim grid × iterations, not the final draw). */
 const MOBILE = (matchMedia("(pointer:coarse)").matches || matchMedia("(max-width:760px)").matches)
   && !matchMedia("(min-width:1100px)").matches;
 const SRC_W = 1260, SRC_H = 1746;                 // portrait output resolution
 const ASPECT = SRC_W / SRC_H;
-const OUT_W = MOBILE ? 760 : SRC_W;               // canvas backing-store resolution
-const OUT_H = Math.round(OUT_W / ASPECT);
-let SIM_W = MOBILE ? 380 : 600, SIM_H = Math.round(SIM_W / ASPECT);   // simulation grid
+/* Backing-store (render) resolution. The render is a single fragment-shader pass
+   per frame, so it's cheap to make it crisp — on mobile we target the device's
+   real pixel height (longest screen side × DPR, capped) so Retina screens look
+   sharp even when the art is cover-filled. Desktop keeps the canonical source
+   size; assemble.sh rescales any recording back to 1260×1746 regardless. */
+const DPR = Math.min(window.devicePixelRatio || 1, 3);
+const OUT_H = MOBILE ? Math.min(2880, Math.round(Math.max(screen.width, screen.height) * DPR)) : SRC_H;
+const OUT_W = MOBILE ? Math.round(OUT_H * ASPECT) : SRC_W;
+let SIM_W = MOBILE ? 380 : 600, SIM_H = Math.round(SIM_W / ASPECT);   // simulation grid (the expensive part)
 
 /* ---------- presets (Pearson / Munafo classification of Gray-Scott regimes) ---------- */
 const PRESETS = [
