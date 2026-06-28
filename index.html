@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0c0d10">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <title>Reaction-Diffusion Studio — B&amp;W</title>
 <style>
   :root{ --bg:#0c0d10; --panel:#16181d; --line:#262a31; --txt:#d7dbe2; --dim:#838b98; --accent:#e7e9ee; }
@@ -18,6 +21,12 @@
   canvas{ background:#fff; box-shadow:0 10px 60px rgba(0,0,0,.6); cursor:crosshair; touch-action:none;
     max-width:calc(100vw - 320px); max-height:100vh; max-height:100dvh; image-rendering:auto; transition:max-width .25s ease; }
   body.collapsed canvas{ max-width:100vw; }
+  /* Fill-screen mode: canvas covers the whole viewport, cropping the sides of
+     the portrait art so it goes edge-to-edge (the pattern is continuous, so the
+     crop reads as intentional). Letterboxed mode is the default. */
+  body.fill #stage{ align-items:center; justify-content:center; padding:0; }
+  body.fill canvas{ width:100vw; height:100vh; height:100dvh; max-width:none; max-height:none;
+    object-fit:cover; box-shadow:none; transition:none; }
   #panel{ position:fixed; top:0; right:0; width:300px; height:100%; background:var(--panel);
     border-left:1px solid var(--line); padding:14px 14px 40px; overflow-y:auto; overflow-x:hidden; transition:transform .25s ease;
     scrollbar-width:thin; scrollbar-color:#2c313a transparent; }
@@ -146,6 +155,15 @@
   <h1>Reaction-Diffusion Studio</h1>
   <div class="sub">Gray-Scott · ferrofluid &amp; B/W</div>
   <div class="btns" style="margin-bottom:10px"><button id="reset">Reset to defaults</button><button id="helpBtn" title="Explain each control on hover (?)">? Help</button></div>
+
+  <div class="grp">
+    <h2>Display</h2>
+    <div class="btns">
+      <button id="fillBtn">Fill screen</button>
+      <button id="fsBtn">Fullscreen</button>
+    </div>
+    <div class="hint"><b>Fill screen</b> stretches the art edge-to-edge (cropping the sides) instead of letterboxing it — best for an immersive view on a phone. <b>Fullscreen</b> hides the browser chrome where the browser allows it; on iPhone, install to the Home Screen for the same effect.</div>
+  </div>
 
   <div class="grp">
     <h2>Pattern regime (presets)</h2>
@@ -927,8 +945,32 @@ $("reset").addEventListener("click",()=>{ Object.assign(P, DEFAULTS); P.mode=DEF
 $("toggle").addEventListener("click",()=>{ const c=document.body.classList.toggle("collapsed");
   $("toggle").textContent = c ? "Show" : "Hide"; });
 
+/* ---------- display: fill-screen + fullscreen ---------- */
+function setFill(on){ document.body.classList.toggle("fill",on); $("fillBtn").classList.toggle("on",on);
+  try{ localStorage.setItem("rd_fill", on?"1":"0"); }catch(e){}
+  if(on && MOBILE){ document.body.classList.add("collapsed"); $("toggle").textContent="Show"; } }
+$("fillBtn").addEventListener("click",()=> setFill(!document.body.classList.contains("fill")));
+// restore saved preference
+try{ if(localStorage.getItem("rd_fill")==="1") setFill(true); }catch(e){}
+
+const fsApi = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+if(!fsApi){ $("fsBtn").style.display="none"; }   // unsupported (e.g. iPhone Safari) — PWA install gives fullscreen instead
+else {
+  $("fsBtn").addEventListener("click",()=>{
+    const d=document, el=d.documentElement;
+    if(d.fullscreenElement || d.webkitFullscreenElement){ (d.exitFullscreen||d.webkitExitFullscreen).call(d); }
+    else { (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }
+  });
+  const syncFs=()=>{ const on=!!(document.fullscreenElement||document.webkitFullscreenElement);
+    $("fsBtn").classList.toggle("on",on); $("fsBtn").textContent = on?"Exit fullscreen":"Fullscreen"; };
+  document.addEventListener("fullscreenchange",syncFs);
+  document.addEventListener("webkitfullscreenchange",syncFs);
+}
+
 /* ---------- contextual help ---------- */
 const HELP = {
+  fillBtn:["Fill screen","Stretch the artwork edge-to-edge so it fills the whole screen, cropping the left/right sides instead of showing black bars. The pattern is continuous, so the crop reads as intentional. Tap again to letterbox."],
+  fsBtn:["Fullscreen","Hide the browser chrome for a clean, immersive view, where the browser supports it. On iPhone, add the app to your Home Screen for the same chromeless result."],
   feed:["Feed rate (F)","How fast fresh chemical is fed in everywhere. With Kill, this is the main 'genome' of the pattern — the pair decides whether you get coral, mazes, spots or stripes. Higher feed = busier, more aggressive growth."],
   kill:["Kill rate (k)","How fast chemical is removed. Raise it to thin patterns out toward isolated spots and holes; lower it to fill in toward solid mazes and coral."],
   dA:["Diffuse A","How fast chemical A spreads across the grid. Higher = larger, smoother, more blobby features."],
@@ -1072,6 +1114,12 @@ const STARTUP_LFOS = {
 };
 for(const k in STARTUP_LFOS) setLfo(k, { on:true, ...STARTUP_LFOS[k] });
 requestAnimationFrame(loop);
+
+/* ---------- PWA: register the service worker (installable + offline) ---------- */
+/* Needs a secure context (https or localhost); skips silently otherwise. */
+if("serviceWorker" in navigator && (location.protocol==="https:" || location.hostname==="localhost")){
+  addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+}
 </script>
 </body>
 </html>

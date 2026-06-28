@@ -8,7 +8,8 @@ import { extname, join, normalize } from "node:path";
 const ROOT = process.cwd();
 const PORT = 8099;
 const TYPES = { ".html":"text/html", ".js":"text/javascript", ".mjs":"text/javascript",
-  ".css":"text/css", ".png":"image/png", ".mov":"video/quicktime", ".webm":"video/webm" };
+  ".css":"text/css", ".png":"image/png", ".svg":"image/svg+xml", ".json":"application/json",
+  ".webmanifest":"application/manifest+json", ".mov":"video/quicktime", ".webm":"video/webm" };
 
 createServer(async (req, res) => {
   try {

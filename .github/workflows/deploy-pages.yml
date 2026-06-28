@@ -11,6 +11,9 @@ on:
     # Only redeploy when something user-facing actually changes.
     paths:
       - 'index.html'
+      - 'manifest.json'
+      - 'sw.js'
+      - 'icons/**'
       - 'assemble.sh'
       - 'README.md'
       - '.github/workflows/deploy-pages.yml'

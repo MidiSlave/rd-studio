@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- App icon: amber gooey reaction-diffusion blobs on the app's dark ground.
+       Background is full-bleed (maskable-safe); the pattern sits within the
+       central ~66% safe zone so it survives circular/rounded masks. -->
+  <defs>
+    <radialGradient id="amber" cx="42%" cy="38%" r="75%">
+      <stop offset="0%"  stop-color="#ffd27a"/>
+      <stop offset="42%" stop-color="#f7a324"/>
+      <stop offset="100%" stop-color="#cc540d"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#f7a324" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#f7a324" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#0c0d10"/>
+  <circle cx="512" cy="512" r="360" fill="url(#glow)"/>
+
+  <!-- amber fluid mass -->
+  <g fill="url(#amber)">
+    <circle cx="470" cy="430" r="190"/>
+    <circle cx="640" cy="560" r="140"/>
+    <circle cx="400" cy="630" r="120"/>
+    <circle cx="630" cy="380" r="92"/>
+    <circle cx="360" cy="470" r="70"/>
+  </g>
+
+  <!-- dark "holes" that give the reaction-diffusion coral feel -->
+  <g fill="#0c0d10">
+    <circle cx="470" cy="430" r="74"/>
+    <circle cx="628" cy="556" r="52"/>
+    <circle cx="402" cy="628" r="42"/>
+    <circle cx="544" cy="486" r="30"/>
+  </g>
+
+  <!-- wet specular highlights -->
+  <g fill="#fff" opacity="0.9">
+    <circle cx="436" cy="386" r="20"/>
+    <circle cx="600" cy="520" r="12"/>
+  </g>
+</svg>

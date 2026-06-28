@@ -10,6 +10,10 @@ frames/
 *.jpeg
 *.gif
 
+# ...but the PWA app icons are ours and must ship.
+!icons/
+!icons/*.png
+
 # Generated recordings & renders
 *.webm
 *.mp4
