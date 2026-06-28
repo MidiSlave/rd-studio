@@ -20,6 +20,9 @@ frames/
 *.mov
 output.*
 
+# Personal saved-look export (mirrors the in-app defaults; not used by the app)
+choice-params.txt
+
 # Node / OS
 node_modules/
 .DS_Store

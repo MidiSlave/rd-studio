@@ -79,8 +79,26 @@ coarse beads, thick worms) at once.
 - **Draw seed / Paint denser / Paint finer / Reset density** — paint the density field directly on the canvas.
 
 **Motion & flow**
-- **Flow** — push the fluid in a direction (**Flow** strength + **Flow angle**) so it drifts and drags into combs. Works on desktop with no gyro, and drives the colour pickup.
+- **Flow shape** — how the flow combs the fluid, so it forms ordered structures plain reaction-diffusion never makes on its own:
+  - **Uniform** — a plain global drift (**Flow angle** = direction).
+  - **Radial** — rays a sunburst out of the centre.
+  - **Swirl** — winds it into fingerprint whorls.
+  - **Spiral** — blends radial + tangential (**Flow angle** = spiral pitch).
+  - **Random** — wandering turbulent eddies (curl-of-noise; **Flow angle** re-seeds the pattern).
+- **Flow** sets the strength; **Flow centre X/Y** place the eye of the radial / swirl / spiral. Drives the colour pickup; tilt rides on top.
 - **Tilt** — on a phone, tilt to make the fluid flow and the highlights slosh (iOS asks permission). **Tilt flow** sets the strength.
+
+**Concentric rings** — a sustained radial standing wave that pins the reaction into evenly-spaced
+concentric rings (the radar / target look) and keeps forcing them so they persist (unlike the
+one-shot **Rings** seed).
+- **Ring force** = strength · **Ring spacing** = how tightly they pack · **Ring centre X/Y**. Pair
+  with the **Swirl** Flow shape to lock them into perfect circles.
+
+**Symmetry** — a display-only fold (the simulation underneath is untouched, so it toggles freely
+and works in every render mode).
+- **Mirror X** gives the Rorschach "spine" (chevron / herringbone with the **Radial** Flow shape),
+  plus **Mirror Y** / **Mirror both (4-way)**.
+- **Kaleidoscope** repeats wedges around the centre — **Folds** = how many, **Rotate** spins them.
 
 **Modulation — an LFO on any parameter**
 - Every slider has a small **`~`** button. Tap it to modulate that parameter with an **LFO** — a compact **rate / depth / offset / waveform** strip appears under the slider and the value sweeps on its own. **Offset** shifts the oscillation centre off the base value. Tap the **LFO params** header to collapse a strip while the LFO keeps running. Waveforms: sine, triangle, saw, square, random (sample-&-hold).

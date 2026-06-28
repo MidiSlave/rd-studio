@@ -259,10 +259,19 @@
   <div class="grp">
     <h2>Concentric rings</h2>
     <div class="row"><label>Ring force</label><input id="ring" type="range" min="0" max="1" step="0.01"><span class="val" id="ring_v"></span></div>
+    <div class="row"><label>Ring shape</label><select id="ringShape">
+      <option value="0">Circles</option>
+      <option value="1">Squares</option>
+      <option value="2">Diamonds</option>
+      <option value="3">Polygon</option>
+      <option value="4">Star</option>
+    </select></div>
     <div class="row"><label>Ring spacing</label><input id="ringFreq" type="range" min="10" max="260" step="2"><span class="val" id="ringFreq_v"></span></div>
+    <div class="row"><label>Sides / points</label><input id="ringSides" type="range" min="3" max="12" step="1"><span class="val" id="ringSides_v"></span></div>
+    <div class="row"><label>Twist</label><input id="ringTwist" type="range" min="-8" max="8" step="0.1"><span class="val" id="ringTwist_v"></span></div>
     <div class="row"><label>Ring centre X</label><input id="ringCX" type="range" min="0" max="1" step="0.01"><span class="val" id="ringCX_v"></span></div>
     <div class="row"><label>Ring centre Y</label><input id="ringCY" type="range" min="0" max="1" step="0.01"><span class="val" id="ringCY_v"></span></div>
-    <div class="hint">Pins the reaction into evenly-spaced concentric rings radiating from a centre — the radar / target look — and keeps forcing them so they persist (unlike the one-shot <b>Rings</b> seed). <b>Ring force</b> = strength, <b>spacing</b> = how tight the rings pack. Pair with the <b>Swirl</b> Flow shape to lock them into perfect circles.</div>
+    <div class="hint">Pins the reaction into evenly-spaced concentric contours and keeps forcing them so they persist (unlike the one-shot <b>Rings</b> seed). <b>Ring shape</b> picks the contour — circles, squares, diamonds, <b>Polygon</b> / <b>Star</b> (set <b>Sides / points</b>). <b>Twist</b> winds any of them into a spiral. <b>Spacing</b> = how tight they pack. Pair with the <b>Swirl</b> Flow shape to lock them in.</div>
   </div>
 
   <div class="grp">
@@ -435,7 +444,7 @@ const P = {
   // kaleidoscope / mirror symmetry (display-only fold)
   symMode:0, symFolds:6, symAngle:0.0,
   // concentric ring forcing (sustained radial standing wave)
-  ring:0.0, ringFreq:90, ringCX:0.5, ringCY:0.5,
+  ring:0.0, ringFreq:90, ringCX:0.5, ringCY:0.5, ringShape:0, ringSides:6, ringTwist:0.0,
   colour:false, colScale:1.6, colBleed:0.5, colSpread:1.3, colShift:0,
 };
 const DEFAULTS = Object.freeze({ ...P });
@@ -463,7 +472,8 @@ uniform vec2 u_brush; uniform float u_brushR,u_brushAmt;
 uniform float u_field,u_fGrad,u_fAngle,u_fNoise,u_fScale;  // spatial regime field
 uniform float u_flowOn,u_flowStr,u_flowAngle; uniform int u_flowMode;
 uniform vec2 u_flowCtr,u_flowAdd;    // shaped advection (uniform/radial/swirl/spiral) + tilt
-uniform float u_ringAmt,u_ringFreq; uniform vec2 u_ringCtr; // concentric ring forcing
+uniform float u_ringAmt,u_ringFreq,u_ringSides,u_ringTwist; uniform int u_ringShape;
+uniform vec2 u_ringCtr;               // concentric ring forcing (shape + twist)
 uniform float u_colOn,u_colScale,u_colNoise,u_colDiff,u_colRelax,u_colShift; // colour pickup
 in vec2 v_uv; out vec4 o;
 vec3 s(vec2 uv){ return texture(u_state, uv).rgb; }   // .r=A .g=B .b=tint
@@ -549,7 +559,15 @@ void main(){
   float ringF=0.0, ringB=0.0;
   if(u_ringAmt>0.0){ float asp=u_texel.y/u_texel.x;
     vec2 rc=(uv-u_ringCtr)*vec2(asp,1.0);
-    float w=sin(length(rc)*u_ringFreq);
+    float r=length(rc), ang=atan(rc.y,rc.x);
+    float seg=6.2831853/u_ringSides;
+    float d;                                    // distance metric sets the contour shape
+    if(u_ringShape==1)      d=max(abs(rc.x),abs(rc.y));            // squares
+    else if(u_ringShape==2) d=abs(rc.x)+abs(rc.y);                // diamonds
+    else if(u_ringShape==3) d=cos(floor(0.5+ang/seg)*seg-ang)*r;  // regular polygon
+    else if(u_ringShape==4) d=r*(1.0+0.35*cos(u_ringSides*ang));  // star
+    else                    d=r;                                  // circles
+    float w=sin(d*u_ringFreq + ang*u_ringTwist);// twist rotates the phase -> spirals
     ringF = w*u_ringAmt*0.020;                  // strong feed forcing -> pins the banding
     ringB = max(w,0.0)*u_ringAmt;               // and seed activator in the crests so rings lock fast
   }
@@ -570,7 +588,12 @@ void main(){
   float t=c.b;
   if(u_colOn>0.5){
     vec2 cd=vec2(cos(u_fAngle*1.3+1.0), sin(u_fAngle*1.3+1.0));
-    float tsrc=0.5+0.5*sin(dot(uv-0.5,cd)*u_colScale*6.2831 + fbm(uv*u_colNoise)*3.0 + u_colShift);
+    /* a richer source breaks the tint into distinct colour zones (red/teal/amber
+       regions in one frame) rather than a single smooth gradient */
+    float tsrc=0.5+0.5*sin(dot(uv-0.5,cd)*u_colScale*6.2831
+                           + fbm(uv*u_colNoise)*3.4
+                           + fbm(uv*u_colNoise*2.7+11.0)*2.2
+                           + u_colShift);
     t += (u_colDiff*lap.b + (tsrc-t)*u_colRelax)*u_dt;
   }
   o = vec4(clamp(A,0.,1.), clamp(B,0.,1.), clamp(t,0.,1.), 1.0);
@@ -668,6 +691,8 @@ void main(){
     col *= mix(1.0, 0.30+0.70*diff, h);                     // shade the domes
     col *= 1.0 - 0.55*gm;                                   // dark contact groove
     col += u_specCol * spc * (0.35+0.65*h);                 // wet specular highlights
+    float glint = pow(max(dot(N,H),0.0), u_gloss*6.0+48.0); // tight pinpoint hotspot
+    col += u_specCol * glint * u_spec * 0.6 * h;            // crisp glint inside each bead
     col += envCol(R) * u_env * (0.25+0.75*fres) * h;        // environment reflection (glossy beads)
     col += hueRot(u_rimCol,u_hue) * fres * u_rim * h;       // rim light on bead edges
     col += hueRot(u_rimCol,u_hue) * glowMask(uv) * u_glow * 0.7;  // backlit glow / bloom
@@ -804,7 +829,8 @@ const U = {
   flowStr:gl.getUniformLocation(simProg,"u_flowStr"), flowAngle:gl.getUniformLocation(simProg,"u_flowAngle"),
   flowCtr:gl.getUniformLocation(simProg,"u_flowCtr"), flowAdd:gl.getUniformLocation(simProg,"u_flowAdd"),
   ringAmt:gl.getUniformLocation(simProg,"u_ringAmt"), ringFreq:gl.getUniformLocation(simProg,"u_ringFreq"),
-  ringCtr:gl.getUniformLocation(simProg,"u_ringCtr"),
+  ringCtr:gl.getUniformLocation(simProg,"u_ringCtr"), ringShape:gl.getUniformLocation(simProg,"u_ringShape"),
+  ringSides:gl.getUniformLocation(simProg,"u_ringSides"), ringTwist:gl.getUniformLocation(simProg,"u_ringTwist"),
   colOn:gl.getUniformLocation(simProg,"u_colOn"), colScale:gl.getUniformLocation(simProg,"u_colScale"),
   colNoise:gl.getUniformLocation(simProg,"u_colNoise"), colDiff:gl.getUniformLocation(simProg,"u_colDiff"),
   colRelax:gl.getUniformLocation(simProg,"u_colRelax"), colShift:gl.getUniformLocation(simProg,"u_colShift"),
@@ -856,6 +882,7 @@ function step(){
   gl.uniform2f(U.flowCtr, P.flowCX, P.flowCY); gl.uniform2f(U.flowAdd, addx, addy);
   gl.uniform1f(U.ringAmt, P.ring); gl.uniform1f(U.ringFreq, P.ringFreq);
   gl.uniform2f(U.ringCtr, P.ringCX, P.ringCY);
+  gl.uniform1i(U.ringShape, P.ringShape); gl.uniform1f(U.ringSides, P.ringSides); gl.uniform1f(U.ringTwist, P.ringTwist);
   // colour pickup field
   gl.uniform1f(U.colOn, P.colour?1:0); gl.uniform1f(U.colScale,P.colScale);
   gl.uniform1f(U.colNoise,2.5); gl.uniform1f(U.colDiff,P.colBleed); gl.uniform1f(U.colRelax,0.03);
@@ -986,6 +1013,7 @@ function refreshControls(){ RANGES.forEach(f=>f());
   $("palette").value=String(P.palette);
   $("flowMode").value=String(P.flowMode);
   $("symMode").value=String(P.symMode);
+  $("ringShape").value=String(P.ringShape);
   $("invert").classList.toggle("on",!!P.invert);
   $("colBtn").classList.toggle("on",P.colour);
   if($("morphBtn")) $("morphBtn").classList.toggle("on", MOD.feed.on);
@@ -1070,6 +1098,8 @@ bindRange("symFolds","symFolds",x=>x.toFixed(0));
 bindRange("symAngle","symAngle",x=>x.toFixed(2));
 bindRange("ring","ring",x=>x.toFixed(2));
 bindRange("ringFreq","ringFreq",x=>x.toFixed(0));
+bindRange("ringSides","ringSides",x=>x.toFixed(0));
+bindRange("ringTwist","ringTwist",x=>x.toFixed(1));
 bindRange("ringCX","ringCX",x=>x.toFixed(2));
 bindRange("ringCY","ringCY",x=>x.toFixed(2));
 bindRange("colSpread","colSpread",x=>x.toFixed(2));
@@ -1088,6 +1118,10 @@ $("flowMode").addEventListener("change",e=>{ P.flowMode=parseInt(e.target.value)
 /* symmetry dropdown */
 $("symMode").value=String(P.symMode);
 $("symMode").addEventListener("change",e=>{ P.symMode=parseInt(e.target.value); });
+
+/* ring shape dropdown */
+$("ringShape").value=String(P.ringShape);
+$("ringShape").addEventListener("change",e=>{ P.ringShape=parseInt(e.target.value); });
 
 /* paint mode buttons */
 function setPaintMode(mode,sign){ P.paintMode=mode; if(sign!==undefined) P.dsign=sign;
@@ -1358,6 +1392,7 @@ function randomiseWallpaper(){
   // now and then pin it into concentric radar rings
   if(Math.random()<0.25){
     P.ring=rr(0.4,0.9); P.ringFreq=40+rint(160);
+    P.ringShape=rint(5); P.ringSides=3+rint(10); P.ringTwist=(Math.random()<0.5)?rr(-5,5):0;
     P.ringCX=rr(0.35,0.65); P.ringCY=rr(0.35,0.65);
   } else { P.ring=0; }
 
