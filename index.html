@@ -280,6 +280,20 @@
   </div>
 
   <div class="grp">
+    <h2>Symmetry</h2>
+    <div class="row"><label>Mirror</label><select id="symMode">
+      <option value="0">Off</option>
+      <option value="1">Mirror X (spine)</option>
+      <option value="2">Mirror Y</option>
+      <option value="3">Mirror both (4-way)</option>
+      <option value="4">Kaleidoscope</option>
+    </select></div>
+    <div class="row"><label>Folds</label><input id="symFolds" type="range" min="2" max="12" step="1"><span class="val" id="symFolds_v"></span></div>
+    <div class="row"><label>Rotate</label><input id="symAngle" type="range" min="0" max="6.28" step="0.02"><span class="val" id="symAngle_v"></span></div>
+    <div class="hint">Folds the picture into a symmetric pattern (display only — the simulation underneath is untouched). <b>Mirror X</b> gives the Rorschach "spine", <b>Kaleidoscope</b> repeats wedges around the centre (<b>Folds</b> = how many, <b>Rotate</b> spins them). Pairs well with the radial / swirl Flow shapes.</div>
+  </div>
+
+  <div class="grp">
     <h2>Seed / canvas</h2>
     <div class="btns">
       <button id="seedSpots">Spots</button>
@@ -409,6 +423,8 @@ const P = {
   tilt:false, tiltFlow:0.55,
   // manual flow (desktop) + advected colour pickup / bleed
   flowAngle:1.0, flowStr:0.0, flowMode:0, flowCX:0.5, flowCY:0.5,
+  // kaleidoscope / mirror symmetry (display-only fold)
+  symMode:0, symFolds:6, symAngle:0.0,
   colour:false, colScale:1.6, colBleed:0.5, colSpread:1.3, colShift:0,
 };
 const DEFAULTS = Object.freeze({ ...P });
@@ -545,9 +561,27 @@ uniform vec3 u_fluid,u_bgA,u_bgB,u_specCol,u_rimCol;     // ferrofluid palette
 uniform float u_light,u_relief,u_gloss,u_spec,u_rim,u_vig;
 uniform float u_glow,u_env,u_hue;                        // backlit glow, reflection, hue drift
 uniform float u_colOn,u_colSpread;                       // colour pickup (spread = hue range around palette)
+uniform int u_symMode; uniform float u_symFolds,u_symAngle;  // kaleidoscope / mirror fold
 in vec2 v_uv; out vec4 o;
 
 float aspect(){ return u_size.x/u_size.y; }
+
+/* kaleidoscope / mirror fold — display-only; the simulation stays untouched,
+   so it toggles freely and works in every render mode. */
+vec2 foldUV(vec2 uv){
+  if(u_symMode==1){ uv.x = 0.5 - abs(uv.x-0.5); }            // mirror X (Rorschach spine)
+  else if(u_symMode==2){ uv.y = 0.5 - abs(uv.y-0.5); }       // mirror Y
+  else if(u_symMode==3){ uv = 0.5 - abs(uv-0.5); }           // mirror both (4-way)
+  else if(u_symMode==4){                                     // N-fold kaleidoscope
+    vec2 c=(uv-0.5)*vec2(aspect(),1.0);
+    float seg=6.2831853/u_symFolds;
+    float a=atan(c.y,c.x)+u_symAngle;
+    a=mod(a,seg); a=abs(a-seg*0.5)-u_symAngle;               // mirror within each wedge
+    c=vec2(cos(a),sin(a))*length(c);
+    uv=c/vec2(aspect(),1.0)+0.5;
+  }
+  return uv;
+}
 
 float sampB(vec2 uv){
   // manual bilinear so it stays smooth without float-linear filtering
@@ -587,7 +621,7 @@ float glowMask(vec2 uv){
 }
 
 void main(){
-  vec2 uv = v_uv;
+  vec2 uv = foldUV(v_uv);
   vec3 col;
   if(u_mode==3){
     /* ---- glossy two-tone ferrofluid: bright lit ridges on near-black ---- */
@@ -763,6 +797,8 @@ const RU = {
   glow:gl.getUniformLocation(renderProg,"u_glow"), env:gl.getUniformLocation(renderProg,"u_env"),
   hue:gl.getUniformLocation(renderProg,"u_hue"), colOn:gl.getUniformLocation(renderProg,"u_colOn"),
   colSpread:gl.getUniformLocation(renderProg,"u_colSpread"),
+  symMode:gl.getUniformLocation(renderProg,"u_symMode"),
+  symFolds:gl.getUniformLocation(renderProg,"u_symFolds"), symAngle:gl.getUniformLocation(renderProg,"u_symAngle"),
 };
 
 /* ---------- brush input ---------- */
@@ -822,6 +858,7 @@ function draw(){
   gl.uniform1f(RU.width,P.width); gl.uniform1f(RU.invert,P.invert);
   gl.uniform1f(RU.glow,P.glow); gl.uniform1f(RU.env,P.env); gl.uniform1f(RU.hue,P.hue);
   gl.uniform1f(RU.colOn, P.colour?1:0); gl.uniform1f(RU.colSpread, P.colSpread);
+  gl.uniform1i(RU.symMode,P.symMode); gl.uniform1f(RU.symFolds,P.symFolds); gl.uniform1f(RU.symAngle,P.symAngle);
   if(P.mode===3){
     const pal=PALETTES[P.palette]||PALETTES[0];
     gl.uniform3fv(RU.fluid,pal.fluid); gl.uniform3fv(RU.bgA,pal.bgA); gl.uniform3fv(RU.bgB,pal.bgB);
@@ -921,6 +958,7 @@ function refreshControls(){ RANGES.forEach(f=>f());
   $("mode").value=String(P.mode);
   $("palette").value=String(P.palette);
   $("flowMode").value=String(P.flowMode);
+  $("symMode").value=String(P.symMode);
   $("invert").classList.toggle("on",!!P.invert);
   $("colBtn").classList.toggle("on",P.colour);
   if($("morphBtn")) $("morphBtn").classList.toggle("on", MOD.feed.on);
@@ -1001,6 +1039,8 @@ bindRange("flowStr","flowStr",x=>x.toFixed(2));
 bindRange("flowAngle","flowAngle",x=>x.toFixed(2));
 bindRange("flowCX","flowCX",x=>x.toFixed(2));
 bindRange("flowCY","flowCY",x=>x.toFixed(2));
+bindRange("symFolds","symFolds",x=>x.toFixed(0));
+bindRange("symAngle","symAngle",x=>x.toFixed(2));
 bindRange("colSpread","colSpread",x=>x.toFixed(2));
 bindRange("colScale","colScale",x=>x.toFixed(1));
 bindRange("colBleed","colBleed",x=>x.toFixed(2));
@@ -1013,6 +1053,10 @@ $("palette").addEventListener("change",e=>{ P.palette=parseInt(e.target.value); 
 /* flow shape dropdown */
 $("flowMode").value=String(P.flowMode);
 $("flowMode").addEventListener("change",e=>{ P.flowMode=parseInt(e.target.value); });
+
+/* symmetry dropdown */
+$("symMode").value=String(P.symMode);
+$("symMode").addEventListener("change",e=>{ P.symMode=parseInt(e.target.value); });
 
 /* paint mode buttons */
 function setPaintMode(mode,sign){ P.paintMode=mode; if(sign!==undefined) P.dsign=sign;
@@ -1275,6 +1319,11 @@ function randomiseWallpaper(){
     P.flowStr=rr(0.2,0.6);
     P.flowCX=rr(0.32,0.68); P.flowCY=rr(0.32,0.68);
   } else { P.flowMode=0; }
+  // occasionally fold it into a kaleidoscope / mirror for a fresh look
+  if(Math.random()<0.35){
+    P.symMode=pick([1,3,4,4]);
+    P.symFolds=3+rint(7); P.symAngle=rr(0,6.2831);
+  } else { P.symMode=0; }
 
   refreshControls();
   updateModeUI();
