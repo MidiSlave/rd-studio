@@ -64,6 +64,11 @@
   .lfostrip{ margin:-3px 0 9px 12px; padding-left:9px; border-left:2px solid #2c313a; }
   .lfostrip .row{ margin-bottom:5px; }
   .lfostrip label{ flex-basis:58px; }
+  .lfohdr{ display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;
+    font-size:10.5px; color:var(--dim); margin-bottom:5px; }
+  .lfohdr .caret{ display:inline-block; transition:transform .15s; }
+  .lfostrip.closed .caret{ transform:rotate(-90deg); }
+  .lfostrip.closed .lfobody{ display:none; }
   .grp.collapsed .lfostrip{ display:none; }
   select{ background:#20242b; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:5px; flex:1 1 auto; min-width:0; }
   .hint{ color:var(--dim); font-size:10.5px; margin-top:8px; }
@@ -221,7 +226,7 @@
     <div class="btns">
       <button id="morphBtn">Morph</button>
     </div>
-    <div class="hint">Tap any <b>~</b> beside a slider to give that parameter an LFO (rate, depth, waveform) — the value sweeps on its own. <b>Morph</b> is a one-tap preset: phase-offset LFOs on Feed &amp; Kill.</div>
+    <div class="hint">Tap any <b>~</b> beside a slider to give that parameter an LFO (rate, depth, offset, waveform) — the value sweeps on its own. Tap the <b>LFO params</b> header to collapse a strip while it keeps running. <b>Morph</b> is a one-tap preset: phase-offset LFOs on Feed &amp; Kill.</div>
     <div class="row" style="margin-top:8px"><label>Flow</label><input id="flowStr" type="range" min="0" max="1.5" step="0.02"><span class="val" id="flowStr_v"></span></div>
     <div class="row"><label>Flow angle</label><input id="flowAngle" type="range" min="0" max="6.28" step="0.02"><span class="val" id="flowAngle_v"></span></div>
     <div class="hint">Push the fluid in a direction so it flows and drags into combs — like tilting, but works on desktop too. Drives the colour pickup.</div>
@@ -755,7 +760,8 @@ function modStep(dt){
     else if(m.wave===3) w=x<0.5?1.0:-1.0;                  // square
     else { const c=Math.floor(m.phase); if(c!==m.rndCyc){ m.rndCyc=c; m.rndVal=Math.random()*2-1; } w=m.rndVal; } // S&H
     const amp=m.depth*(m.max-m.min)*0.5;
-    const eff=Math.min(m.max, Math.max(m.min, m.base + amp*w));
+    const bias=m.offset*(m.max-m.min)*0.5;                  // DC offset: shifts oscillation centre
+    const eff=Math.min(m.max, Math.max(m.min, m.base + bias + amp*w));
     P[key]=eff; m.el.value=eff; m.v.textContent=m.fmt(eff);
   }
 }
@@ -819,7 +825,7 @@ function loop(now){
 const $=id=>document.getElementById(id);
 const RANGES=[]; const MOD={};
 function bindRange(id,key,fmt){ const el=$(id), v=$(id+"_v"); fmt=fmt||(x=>x);
-  const m={on:false, rate:0.20, depth:0.30, phase:0, wave:0, base:P[key],
+  const m={on:false, open:true, rate:0.20, depth:0.30, offset:0, phase:0, wave:0, base:P[key],
     min:parseFloat(el.min), max:parseFloat(el.max), el, v, fmt, rndCyc:-1, rndVal:0};
   MOD[key]=m;
   el.addEventListener("input",()=>{ m.base=parseFloat(el.value); if(!m.on){ P[key]=m.base; v.textContent=fmt(P[key]); } });
@@ -851,17 +857,28 @@ function addLfoToggle(key){
   const strip=document.createElement("div"); strip.className="lfostrip"; strip.style.display="none";
   let opts=""; WAVES.forEach((w,i)=>opts+=`<option value="${i}">${w}</option>`);
   strip.innerHTML=
+    `<div class="lfohdr"><span class="caret">&#9662;</span> LFO params</div>`+
+    `<div class="lfobody">`+
     `<div class="row"><label>~ rate</label><input type="range" class="lr" min="0.01" max="3" step="0.01"><span class="val lrv"></span></div>`+
     `<div class="row"><label>~ depth</label><input type="range" class="ld" min="0" max="1" step="0.01"><span class="val ldv"></span></div>`+
-    `<div class="row"><label>~ wave</label><select class="lw">${opts}</select></div>`;
+    `<div class="row"><label>~ offset</label><input type="range" class="lo" min="-1" max="1" step="0.01"><span class="val lov"></span></div>`+
+    `<div class="row"><label>~ wave</label><select class="lw">${opts}</select></div>`+
+    `</div>`;
   row.after(strip); m.strip=strip;
-  const lr=strip.querySelector(".lr"), ld=strip.querySelector(".ld"), lw=strip.querySelector(".lw");
-  const lrv=strip.querySelector(".lrv"), ldv=strip.querySelector(".ldv");
-  m.sync=()=>{ lr.value=m.rate; lrv.textContent=m.rate.toFixed(2); ld.value=m.depth; ldv.textContent=Math.round(m.depth*100)+"%"; lw.value=m.wave; };
+  const lr=strip.querySelector(".lr"), ld=strip.querySelector(".ld"), lo=strip.querySelector(".lo"), lw=strip.querySelector(".lw");
+  const lrv=strip.querySelector(".lrv"), ldv=strip.querySelector(".ldv"), lov=strip.querySelector(".lov");
+  const hdr=strip.querySelector(".lfohdr");
+  const fmtOff=v=>(v>0?"+":"")+Math.round(v*100)+"%";
+  m.sync=()=>{ lr.value=m.rate; lrv.textContent=m.rate.toFixed(2);
+    ld.value=m.depth; ldv.textContent=Math.round(m.depth*100)+"%";
+    lo.value=m.offset; lov.textContent=fmtOff(m.offset);
+    lw.value=m.wave; strip.classList.toggle("closed",!m.open); };
   m.sync();
   lr.addEventListener("input",()=>{ m.rate=parseFloat(lr.value); lrv.textContent=m.rate.toFixed(2); });
   ld.addEventListener("input",()=>{ m.depth=parseFloat(ld.value); ldv.textContent=Math.round(m.depth*100)+"%"; });
+  lo.addEventListener("input",()=>{ m.offset=parseFloat(lo.value); lov.textContent=fmtOff(m.offset); });
   lw.addEventListener("change",()=>{ m.wave=parseInt(lw.value); });
+  hdr.addEventListener("click",()=>{ m.open=!m.open; strip.classList.toggle("closed",!m.open); });
   btn.addEventListener("click",()=>{ m.on=!m.on; btn.classList.toggle("on",m.on); strip.style.display=m.on?"":"none";
     if(!m.on){ P[key]=m.base; m.el.value=m.base; m.v.textContent=m.fmt(m.base); }
     if((key==="feed"||key==="kill") && $("morphBtn")) $("morphBtn").classList.toggle("on", MOD.feed.on); });
@@ -869,6 +886,7 @@ function addLfoToggle(key){
 function setLfo(key,o){ const m=MOD[key]; if(!m) return;
   if(o.on!==undefined) m.on=o.on; if(o.rate!==undefined) m.rate=o.rate;
   if(o.depth!==undefined) m.depth=o.depth; if(o.wave!==undefined) m.wave=o.wave;
+  if(o.offset!==undefined) m.offset=o.offset;
   if(o.phase!==undefined) m.phase=o.phase;
   if(m.btn) m.btn.classList.toggle("on",m.on);
   if(m.strip) m.strip.style.display=m.on?"":"none";
